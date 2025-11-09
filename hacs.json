@@ -1,1 +1,1 @@
-{\n  "name": "GW Smart Charging",\n  "content_in_root": false,\n  "homeassistant": "2023.12.0",\n  "zip_release": false,\n  "render_readme": true,\n  "domains": [\n    "integration"\n  ]\n}
+{"name": "GW Smart Charging", "content_in_root": false, "homeassistant": "2023.12.0", "zip_release": false, "render_readme": true, "domains": ["integration"]}
