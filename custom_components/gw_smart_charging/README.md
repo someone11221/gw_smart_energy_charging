@@ -12,9 +12,14 @@ Pokročilá integrace pro optimalizaci nabíjení baterie GoodWe s využitím so
 - **Cenové prahové hodnoty**:
   - Always charge price: Vždy nabíjet, pokud cena pod touto hodnotou
   - Never charge price: Nikdy nenabíjet, pokud cena nad touto hodnotou
+  - **Hystereze**: ±5% buffer kolem prahů pro prevenci oscilace
 - **SOC limity**: Min/Max/Target pro ochranu a optimální využití baterie
-- **Predikce spotřeby**: Využití historických dat pro přesnější plánování
+- **Predikce spotřeby**: 
+  - Využití historických dat pro přesnější plánování
+  - **ML predikce**: Průměrování posledních 30 denních vzorů
+- **Critical Hours**: Udržování vyššího SOC během peak hours (např. 17-21)
 - **Automatické ovládání**: Switch pro zapínání/vypínání nabíjení podle plánu
+- **Real-time monitoring**: Battery power a grid import senzory
 
 ## Senzory
 
@@ -48,6 +53,10 @@ Integration vytváří následující senzory:
 - **price_sensor**: sensor.current_consumption_price_czk_kwh (today/tomorrow hourly prices)
 - **load_sensor**: sensor.house_consumption (current power in W)
 - **daily_load_sensor**: sensor.house_consumption_daily (daily consumption pattern)
+- **battery_power_sensor**: sensor.battery_power (real-time battery charge/discharge power)
+- **grid_import_sensor**: sensor.energy_buy (grid import monitoring)
+- **soc_sensor**: sensor.battery_state_of_charge (battery SOC %)
+- **goodwe_switch**: switch.nabijeni_ze_site (charging control)
 - **soc_sensor**: sensor.battery_state_of_charge (battery SOC %)
 - **goodwe_switch**: switch.nabijeni_ze_site (charging control)
 
@@ -64,6 +73,15 @@ Integration vytváří následující senzory:
 ### Cenové prahy
 - **always_charge_price**: Vždy nabíjet pod (CZK/kWh) - výchozí 1.5
 - **never_charge_price**: Nikdy nenabíjet nad (CZK/kWh) - výchozí 4.0
+- **price_hysteresis_pct**: Hystereze kolem prahů (%) - výchozí 5.0
+
+### Critical Hours (Peak Protection)
+- **critical_hours_start**: Začátek kritických hodin (0-23) - výchozí 17
+- **critical_hours_end**: Konec kritických hodin (0-23) - výchozí 21
+- **critical_hours_soc_pct**: Target SOC během peak hours (%) - výchozí 80
+
+### Machine Learning
+- **enable_ml_prediction**: Zapnout ML predikci spotřeby - výchozí false
 
 ### Automatizace
 - **enable_automation**: Povolit automatické ovládání switche

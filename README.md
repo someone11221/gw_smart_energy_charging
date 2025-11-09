@@ -1,15 +1,17 @@
 # GW Smart Charging
 
-Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 1.1.1** přináší 15minutové intervaly pro maximální přesnost řízení.
+Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 1.2.0** přináší hysterezi, ML predikci a critical hours.
 
 ## Funkce
 
 ✨ **15minutová optimalizace** - Přesné řízení v 96 intervalech/den  
 🌞 **Inteligentní self-consumption** - Priorita využití solárního přebytku  
-💰 **Cenové prahové hodnoty** - Always/Never charge prahy  
+💰 **Cenové prahové hodnoty** - Always/Never charge prahy s hysterezí  
 🔋 **SOC limity** - Min/Max/Target pro ochranu baterie  
-📊 **Predikce spotřeby** - Využití historických dat  
+📊 **ML Predikce spotřeby** - Učení z historických dat (30 dní)  
+⚡ **Critical Hours** - Vyšší SOC během peak hours  
 🤖 **Automatické ovládání** - Switch pro řízení podle plánu  
+📈 **Real-time monitoring** - Battery power & grid import  
 
 ## Instalace
 
@@ -26,16 +28,25 @@ Integrace podporuje následující senzory:
 - `sensor.current_consumption_price_czk_kwh` - Ceny elektřiny (today/tomorrow_hourly_prices)
 - `sensor.house_consumption` - Aktuální spotřeba (W)
 - `sensor.house_consumption_daily` - Denní spotřeba (kWh)
+- `sensor.battery_power` - Real-time nabíjecí/vybíjecí výkon
+- `sensor.energy_buy` - Grid import monitoring
 - `sensor.battery_state_of_charge` - SOC baterie (%)
 - `switch.nabijeni_ze_site` - Switch pro ovládání nabíjení
 
-Parametry včetně cenových prahů a SOC limitů lze nastavit přes UI.
+Parametry včetně cenových prahů, SOC limitů, hystereze a critical hours lze nastavit přes UI.
 
 ## Dokumentace
 
 Detailní dokumentace je v `/custom_components/gw_smart_charging/README.md`
 
 ## Release Notes
+
+### v1.2.0
+- 🔄 **Hystereze** - ±5% buffer kolem cenových prahů pro prevenci oscilace
+- 🧠 **ML Predikce** - Průměrování 30 denních vzorů spotřeby pro přesnější plánování
+- ⏰ **Critical Hours** - Udržování vyššího SOC během peak hours (default 17-21)
+- 📊 **Nové senzory** - battery_power, energy_buy (grid import)
+- 🎯 **Smart režimy** - grid_charge_critical pro rozlišení peak hour charging
 
 ### v1.1.1
 - ✨ 15minutové intervaly (96 slotů/den) místo hodinových
