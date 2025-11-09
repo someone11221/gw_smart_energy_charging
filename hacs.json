@@ -1,1 +1,7 @@
-{"name": "GW Smart Charging", "content_in_root": false, "homeassistant": "2023.12.0", "zip_release": false, "render_readme": true, "domains": ["integration"]}
+{
+  "name": "GW Smart Energy Charging",
+  "hacs": "1.6.0",
+  "domains": ["sensor", "switch"],
+  "iot_class": "Local Polling",
+  "homeassistant": "2024.1.0"
+}
