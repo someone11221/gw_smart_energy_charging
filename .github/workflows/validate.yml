@@ -1,0 +1,82 @@
+name: Validate
+
+on:
+  push:
+    branches: [ main, copilot/fix-hacs-structure ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    name: Validate JSON and Python files
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        
+    - name: Validate JSON files
+      run: |
+        echo "Validating hacs.json..."
+        python -c "import json; json.load(open('hacs.json')); print('✓ hacs.json is valid')"
+        
+        echo "Validating manifest.json..."
+        python -c "import json; json.load(open('custom_components/gw_smart_charging/manifest.json')); print('✓ manifest.json is valid')"
+        
+        echo "All JSON files are valid!"
+        
+    - name: Install flake8
+      run: |
+        pip install flake8
+        
+    - name: Lint Python files (non-blocking)
+      continue-on-error: true
+      run: |
+        echo "Running flake8 on custom_components/gw_smart_charging..."
+        flake8 custom_components/gw_smart_charging --count --select=E9,F63,F7,F82 --show-source --statistics || echo "⚠ Flake8 found some issues (non-blocking)"
+        
+    - name: Check for common issues
+      run: |
+        echo "Checking for escaped newlines in JSON files..."
+        if grep -r '\\n' custom_components/gw_smart_charging/manifest.json hacs.json 2>/dev/null; then
+          echo "❌ Found escaped newlines in JSON files"
+          exit 1
+        fi
+        echo "✓ No escaped newlines found in JSON files"
+        
+    - name: Verify integration structure
+      run: |
+        echo "Verifying integration file structure..."
+        required_files=(
+          "custom_components/gw_smart_charging/__init__.py"
+          "custom_components/gw_smart_charging/manifest.json"
+          "custom_components/gw_smart_charging/config_flow.py"
+          "custom_components/gw_smart_charging/coordinator.py"
+          "custom_components/gw_smart_charging/sensor.py"
+          "custom_components/gw_smart_charging/services.py"
+        )
+        
+        for file in "${required_files[@]}"; do
+          if [ ! -f "$file" ]; then
+            echo "❌ Missing required file: $file"
+            exit 1
+          fi
+          echo "✓ Found: $file"
+        done
+        
+        echo "✓ All required integration files present"
+        
+    - name: Validation Summary
+      run: |
+        echo "================================"
+        echo "✅ Validation completed successfully!"
+        echo "================================"
+        echo "- JSON files are valid"
+        echo "- Required integration files present"
+        echo "- No escaped newlines in JSON"
+        echo "================================"
