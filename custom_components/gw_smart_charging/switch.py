@@ -9,7 +9,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 
-from .const import DOMAIN, DEFAULT_NAME, CONF_GOODWE_SWITCH, CONF_ENABLE_AUTOMATION
+from .const import DOMAIN, DEFAULT_NAME, CONF_CHARGING_ON_SCRIPT, CONF_CHARGING_OFF_SCRIPT, CONF_ENABLE_AUTOMATION
 from .coordinator import GWSmartCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -91,22 +91,23 @@ class GWSmartChargingSwitch(CoordinatorEntity, SwitchEntity):
             "current_soc": current_slot.get("soc_pct_end", 0.0),
             "charging_slots_today": charging_slots,
             "automation_enabled": self.coordinator.config.get(CONF_ENABLE_AUTOMATION, True),
-            "goodwe_switch": self.coordinator.config.get(CONF_GOODWE_SWITCH, ""),
+            "charging_on_script": self.coordinator.config.get(CONF_CHARGING_ON_SCRIPT, ""),
+            "charging_off_script": self.coordinator.config.get(CONF_CHARGING_OFF_SCRIPT, ""),
         }
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on (enable charging)."""
-        # This would trigger the GoodWe switch if automation is enabled
+        # This would trigger the charging script if automation is enabled
         _LOGGER.info("Auto charging switch turned ON")
         self._is_on = True
         self.async_write_ha_state()
         
-        # If automation enabled, control the actual GoodWe switch
+        # If automation enabled, call the charging ON script
         if self.coordinator.config.get(CONF_ENABLE_AUTOMATION, True):
-            goodwe_switch = self.coordinator.config.get(CONF_GOODWE_SWITCH)
-            if goodwe_switch:
+            charging_on_script = self.coordinator.config.get(CONF_CHARGING_ON_SCRIPT)
+            if charging_on_script:
                 await self.hass.services.async_call(
-                    "switch", "turn_on", {"entity_id": goodwe_switch}, blocking=True
+                    "script", "turn_on", {"entity_id": charging_on_script}, blocking=True
                 )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
@@ -115,10 +116,10 @@ class GWSmartChargingSwitch(CoordinatorEntity, SwitchEntity):
         self._is_on = False
         self.async_write_ha_state()
         
-        # If automation enabled, control the actual GoodWe switch
+        # If automation enabled, call the charging OFF script
         if self.coordinator.config.get(CONF_ENABLE_AUTOMATION, True):
-            goodwe_switch = self.coordinator.config.get(CONF_GOODWE_SWITCH)
-            if goodwe_switch:
+            charging_off_script = self.coordinator.config.get(CONF_CHARGING_OFF_SCRIPT)
+            if charging_off_script:
                 await self.hass.services.async_call(
-                    "switch", "turn_off", {"entity_id": goodwe_switch}, blocking=True
+                    "script", "turn_on", {"entity_id": charging_off_script}, blocking=True
                 )
