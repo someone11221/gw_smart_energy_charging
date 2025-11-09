@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List, Optional, Tuple
-from datetime import timedelta, datetime, date, time as dt_time
+from datetime import timedelta, datetime, date, time as dt_time, timezone
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -103,7 +103,7 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                 "schedule": schedule,
                 "timestamps": forecast_timestamps,
                 **forecast_meta,
-                "last_update": datetime.utcnow().isoformat(),
+                "last_update": datetime.now(timezone.utc).isoformat(),
             }
         except Exception as err:
             raise UpdateFailed(err) from err

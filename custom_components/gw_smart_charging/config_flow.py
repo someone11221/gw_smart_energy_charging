@@ -27,7 +27,6 @@ class GWSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for GW Smart Charging."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """Handle the initial step."""
@@ -57,3 +56,96 @@ class GWSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
         return self.async_show_form(step_id="user", data_schema=data_schema, errors=errors)
+
+    @staticmethod
+    def async_get_options_flow(config_entry):
+        """Get the options flow for this handler."""
+        return GWSmartOptionsFlow(config_entry)
+
+
+class GWSmartOptionsFlow(config_entries.OptionsFlow):
+    """Handle options flow for reconfiguring sensors."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        """Initialize options flow."""
+        self.config_entry = config_entry
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None):
+        """Manage the options for reconfiguring sensors."""
+        errors: dict[str, str] = {}
+        
+        if user_input is not None:
+            # Update the config entry with new values
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, data={**self.config_entry.data, **user_input}
+            )
+            return self.async_create_entry(title="", data={})
+
+        # Get current values from config entry
+        current_config = self.config_entry.data
+
+        data_schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_NAME, 
+                    default=current_config.get(CONF_NAME, "GW Smart Charging")
+                ): str,
+                vol.Required(
+                    CONF_FORECAST_SENSOR, 
+                    default=current_config.get(CONF_FORECAST_SENSOR, "")
+                ): str,
+                vol.Required(
+                    CONF_PRICE_SENSOR, 
+                    default=current_config.get(CONF_PRICE_SENSOR, "")
+                ): str,
+                vol.Required(
+                    CONF_LOAD_SENSOR, 
+                    default=current_config.get(CONF_LOAD_SENSOR, "")
+                ): str,
+                vol.Optional(
+                    CONF_PV_POWER_SENSOR, 
+                    default=current_config.get(CONF_PV_POWER_SENSOR, "")
+                ): str,
+                vol.Optional(
+                    CONF_GOODWE_SWITCH, 
+                    default=current_config.get(CONF_GOODWE_SWITCH, "switch.nabijeni_ze_site")
+                ): str,
+                vol.Optional(
+                    CONF_SOC_SENSOR, 
+                    default=current_config.get(CONF_SOC_SENSOR, "sensor.battery_state_of_charge")
+                ): str,
+                vol.Optional(
+                    CONF_BATTERY_CAPACITY, 
+                    default=current_config.get(CONF_BATTERY_CAPACITY, 17)
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_MAX_CHARGE_POWER, 
+                    default=current_config.get(CONF_MAX_CHARGE_POWER, 3.7)
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_CHARGE_EFFICIENCY, 
+                    default=current_config.get(CONF_CHARGE_EFFICIENCY, 0.95)
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_MIN_RESERVE, 
+                    default=current_config.get(CONF_MIN_RESERVE, 10)
+                ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_ENABLE_AUTOMATION, 
+                    default=current_config.get(CONF_ENABLE_AUTOMATION, True)
+                ): bool,
+                vol.Optional(
+                    CONF_SWITCH_ON_MEANS_CHARGE, 
+                    default=current_config.get(CONF_SWITCH_ON_MEANS_CHARGE, True)
+                ): bool,
+            }
+        )
+
+        return self.async_show_form(
+            step_id="init", 
+            data_schema=data_schema, 
+            errors=errors,
+            description_placeholders={
+                "info": "Reconfigure sensor entities and parameters"
+            }
+        )
