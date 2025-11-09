@@ -1,6 +1,6 @@
 # GW Smart Charging
 
-Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 1.2.0** přináší hysterezi, ML predikci a critical hours.
+Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 1.3.0** - production ready s hysterezí, ML predikcí a critical hours.
 
 ## Funkce
 
@@ -40,6 +40,13 @@ Parametry včetně cenových prahů, SOC limitů, hystereze a critical hours lze
 Detailní dokumentace je v `/custom_components/gw_smart_charging/README.md`
 
 ## Release Notes
+
+### v1.3.0 (Production Release)
+- ✅ **Production Ready** - Kompletně otestovaná a stabilní verze
+- 🔧 **Defaultní konfigurace** - Všechny senzory mají správné výchozí hodnoty
+- 📋 **Kompletní dokumentace** - Mapování senzorů pro snadnou instalaci
+- 🎯 **Optimalizovaná logika** - Hystereze, ML predikce, Critical hours
+- 🔒 **Security** - 0 vulnerabilities (CodeQL verified)
 
 ### v1.2.0
 - 🔄 **Hystereze** - ±5% buffer kolem cenových prahů pro prevenci oscilace
