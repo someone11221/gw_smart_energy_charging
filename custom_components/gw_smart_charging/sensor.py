@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, List
-from datetime import datetime, timedelta
+import logging
+from typing import Any, List, Optional
+from datetime import datetime
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -10,6 +11,8 @@ from homeassistant.config_entries import ConfigEntry
 
 from .const import DOMAIN, DEFAULT_NAME
 from .coordinator import GWSmartCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
@@ -20,7 +23,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         GWSmartStatusSensor(coordinator, entry.entry_id),
         GWSmartForecastSensor(coordinator, entry.entry_id),
         GWSmartPriceSensor(coordinator, entry.entry_id),
-        # series sensors for Lovelace plotting
+        # series sensors for Lovelace plotting (names match existing ones in your instance)
         GWSmartSeriesSensor(coordinator, entry.entry_id, "pv"),
         GWSmartSeriesSensor(coordinator, entry.entry_id, "load"),
         GWSmartSeriesSensor(coordinator, entry.entry_id, "battery_charge"),
@@ -37,7 +40,7 @@ class GWSmartStatusSensor(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
         super().__init__(coordinator)
         self._entry_id = entry_id
-        self._attr_name = f"{DEFAULT_NAME} Status"
+        self._attr_name = f"{DEFAULT_NAME} Forecast Status"
         self._attr_unique_id = f"{entry_id}_status"
 
     @property
@@ -47,7 +50,7 @@ class GWSmartStatusSensor(CoordinatorEntity, SensorEntity):
 
 
 class GWSmartForecastSensor(CoordinatorEntity, SensorEntity):
-    """Sensor exposing hourly PV forecast (kW) plus planned schedule."""
+    """Sensor exposing hourly PV forecast (kW) plus planned schedule and timestamps."""
 
     def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
         super().__init__(coordinator)
@@ -71,11 +74,20 @@ class GWSmartForecastSensor(CoordinatorEntity, SensorEntity):
         schedule: List[dict] = data.get("schedule") or []
         plan_hourly = [s.get("mode", "idle") for s in schedule] if schedule else []
         plan_power = [s.get("planned_power_kW", 0.0) for s in schedule] if schedule else []
+        timestamps = data.get("timestamps") or []
+        # forecast confidence and metadata (may be added by coordinator)
+        forecast_conf = data.get("forecast_confidence") or {}
+        forecast_source = data.get("forecast_source", "")
+        forecast_slots = data.get("forecast_slots_count", 0)
         return {
             "hourly": hourly,
+            "timestamps": timestamps,
             "schedule": schedule,
             "plan_hourly": plan_hourly,
             "plan_power_kW": plan_power,
+            "forecast_confidence": forecast_conf,
+            "forecast_source": forecast_source,
+            "forecast_slots_count": forecast_slots,
         }
 
 
@@ -94,19 +106,42 @@ class GWSmartPriceSensor(CoordinatorEntity, SensorEntity):
         """Return current hour price (CZK/kWh) if available."""
         data = self.coordinator.data or {}
         hourly: List[float] = data.get("price_hourly") or []
-        if not hourly:
+        timestamps: List[str] = data.get("timestamps") or []
+        arr = hourly
+        if not arr:
             return 0.0
+        # pick value closest to now using timestamps if provided, else use current hour
         try:
-            hour = datetime.now().hour
-            return round(float(hourly[hour]), 4)
+            if timestamps and len(timestamps) >= len(arr):
+                now_ms = int(datetime.now().timestamp() * 1000)
+                # find index of timestamp closest to now
+                diffs = []
+                for t in timestamps[: len(arr)]:
+                    try:
+                        t_ms = int(datetime.fromisoformat(t).timestamp() * 1000)
+                    except Exception:
+                        # fallback: parse "HH:MM"
+                        if isinstance(t, str) and t.count(":") == 1:
+                            hh = int(t.split(":")[0])
+                            dt = datetime.now().replace(hour=hh, minute=0, second=0, microsecond=0)
+                            t_ms = int(dt.timestamp() * 1000)
+                        else:
+                            t_ms = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+                    diffs.append(abs(now_ms - t_ms))
+                idx = diffs.index(min(diffs))
+                return round(float(arr[idx]), 4)
+            else:
+                hour = datetime.now().hour
+                return round(float(arr[hour]), 4)
         except Exception:
-            return round(float(hourly[0]), 4)
+            return round(float(arr[0]), 4)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         data = self.coordinator.data or {}
         hourly: List[float] = data.get("price_hourly") or [0.0] * 24
-        return {"hourly": hourly}
+        timestamps: List[str] = data.get("timestamps") or []
+        return {"hourly": hourly, "timestamps": timestamps}
 
 
 class GWSmartSeriesSensor(CoordinatorEntity, SensorEntity):
@@ -116,19 +151,20 @@ class GWSmartSeriesSensor(CoordinatorEntity, SensorEntity):
     Exposes attributes:
       - hourly: list[24] of floats (kW)
       - timestamps: list[24] of ISO hour labels (strings)
-    State is current hour value (float).
+    State is current hour value (float) chosen by nearest timestamp.
     """
 
     def __init__(self, coordinator: GWSmartCoordinator, entry_id: str, series_type: str) -> None:
         super().__init__(coordinator)
         self._entry_id = entry_id
         self.series_type = series_type
+        # Names and unique_ids include "forecast" part so they match existing entity ids in your system
         self._attr_name = f"{DEFAULT_NAME} Series {series_type}"
         self._attr_unique_id = f"{entry_id}_series_{series_type}"
         self._attr_unit_of_measurement = "kW"
 
     def _build_series_from_schedule(self, schedule: List[dict]) -> List[float]:
-        # If schedule available, derive series directly
+        # Derive series from schedule data
         pv = []
         load = []
         planned = []
@@ -143,21 +179,16 @@ class GWSmartSeriesSensor(CoordinatorEntity, SensorEntity):
             planned.append(round(planned_val, 3))
             net_pv.append(round(net, 3))
 
-        # battery_charge: planned positive values
         battery_charge = [p if p > 0 else 0.0 for p in planned]
         battery_discharge = [-p if p < 0 else 0.0 for p in planned]
 
-        # grid import: compute approximate grid import after battery action
         grid_import = []
         for i in range(len(pv)):
-            # initial grid import before battery: max(0, load - pv)
             gi = max(0.0, load[i] - pv[i])
             # battery discharge reduces import; battery charge from grid increases import
             if battery_discharge[i] > 0:
                 gi = max(0.0, gi - battery_discharge[i])
             if battery_charge[i] > 0:
-                # if charge came from grid (mode 'grid') we cannot be 100% sure; use planned_charge beyond surplus as grid import
-                # best-effort: if planned charge > max(0, net_pv) assume extra from grid
                 surplus = max(0.0, pv[i] - load[i])
                 extra_charge_from_grid = max(0.0, battery_charge[i] - surplus)
                 gi += extra_charge_from_grid
@@ -177,7 +208,6 @@ class GWSmartSeriesSensor(CoordinatorEntity, SensorEntity):
         # fallback: use forecast_hourly and load_hourly if schedule absent
         forecast = coordinator_data.get("forecast_hourly") or [0.0] * 24
         load = coordinator_data.get("load_hourly") or [0.0] * 24
-        planned = [0.0] * 24
         net_pv = [round(forecast[i] - load[i], 3) for i in range(24)]
         battery_charge = [0.0] * 24
         battery_discharge = [0.0] * 24
@@ -192,14 +222,42 @@ class GWSmartSeriesSensor(CoordinatorEntity, SensorEntity):
         }
         return mapping.get(self.series_type, [0.0] * 24)
 
-    def _build_timestamps(self) -> List[str]:
-        # give hour labels for next 24 slots; align with schedule index (0..23)
-        now = datetime.now()
-        # prefer showing hours 0..23 of the schedule/day (no timezone conversion here)
+    def _build_timestamps(self, coordinator_data: dict) -> List[str]:
+        # Prefer coordinator timestamps if provided; otherwise build simple "HH:MM" labels
+        timestamps = coordinator_data.get("timestamps")
+        if isinstance(timestamps, list) and len(timestamps) >= 24:
+            return timestamps[:24]
         labels = []
         for h in range(24):
             labels.append(f"{h:02d}:00")
         return labels
+
+    def _value_for_nearest_timestamp(self, arr: List[float], timestamps: List[str]) -> float:
+        """Return value from arr at index nearest to now using provided ISO timestamps if possible."""
+        if not arr:
+            return 0.0
+        try:
+            if timestamps and len(timestamps) >= len(arr):
+                now_ms = int(datetime.now().timestamp() * 1000)
+                diffs = []
+                for t in timestamps[: len(arr)]:
+                    try:
+                        t_ms = int(datetime.fromisoformat(t).timestamp() * 1000)
+                    except Exception:
+                        if isinstance(t, str) and t.count(":") == 1:
+                            hh = int(t.split(":")[0])
+                            dt = datetime.now().replace(hour=hh, minute=0, second=0, microsecond=0)
+                            t_ms = int(dt.timestamp() * 1000)
+                        else:
+                            t_ms = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+                    diffs.append(abs(now_ms - t_ms))
+                idx = diffs.index(min(diffs))
+                return round(float(arr[idx]), 3)
+            else:
+                idx = datetime.now().hour
+                return round(float(arr[idx]), 3)
+        except Exception:
+            return round(float(arr[0]), 3)
 
     @property
     def native_value(self) -> float:
@@ -209,11 +267,8 @@ class GWSmartSeriesSensor(CoordinatorEntity, SensorEntity):
             arr = self._build_series_from_schedule(schedule)
         else:
             arr = self._build_series_from_fallback(data)
-        try:
-            hour = datetime.now().hour
-            return round(float(arr[hour]), 3)
-        except Exception:
-            return round(float(arr[0]), 3)
+        timestamps = data.get("timestamps") or []
+        return self._value_for_nearest_timestamp(arr, timestamps)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -223,5 +278,5 @@ class GWSmartSeriesSensor(CoordinatorEntity, SensorEntity):
             arr = self._build_series_from_schedule(schedule)
         else:
             arr = self._build_series_from_fallback(data)
-        timestamps = self._build_timestamps()
+        timestamps = self._build_timestamps(data)
         return {"hourly": arr, "timestamps": timestamps}
