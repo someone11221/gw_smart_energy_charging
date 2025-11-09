@@ -1,1 +1,43 @@
-GW Smart Charging\n\nIntegrace automatizuje nabíjení baterie přes GoodWe inverter na základě forecastu FVE a hodinových cen elektřiny.\n- Vystavuje sensor forecast_next_day s plánem pro 24 hodin (mode grid|pv|idle)\n- Automaticky přepíná GoodWe switch (např. switch.nabijeni_ze_site) podle plánu\n- Používá forecast ze solárního forecastu (ha-open-meteo-solar-forecast) a ceny z integrace nanogreencz
+```markdown
+# GW Smart Charging
+
+GW Smart Charging automatizuje nabíjení baterie přes GoodWe invertor podle hodinových cen a solárního forecastu.
+
+Co dělá
+- Vypočítává 24-hodinový plán nabíjení (mode: pv / grid / idle) a vystavuje jej v sensoru.
+- Podporuje UI config flow (přidání přes Settings → Devices & Services → Add integration).
+- Nabízí služby:
+  - gw_smart_charging.optimize_now
+  - gw_smart_charging.apply_schedule_now
+
+Screenshot
+- Přidejte alespoň jeden obrázek do .github/assets/ (např. screenshot.png) a upravte zde odkaz.
+
+Instalace přes HACS
+1. HACS → Settings → Custom repositories → Add repository  
+   - Repository URL: https://github.com/someone11221/gw_smart_energy_charging  
+   - Category: Integration
+2. Po instalaci restartujte Home Assistant.
+3. Settings → Devices & Services → Add Integration → GW Smart Charging
+
+Konfigurace (UI)
+- forecast_sensor: sensor s 24hodinovou předpovědí PV (např. ha-open-meteo-solar-forecast)
+- price_sensor: sensor s 24hodinovými cenami elektřiny
+- pv_power_sensor (volitelně): aktuální výkon FVE
+- soc_sensor: sensor stavu nabití baterie (SOC)
+- goodwe_switch: switch pro povolení/zakázání nabíjení ze sítě
+- battery_capacity_kwh, max_charge_power_kw, charge_efficiency, min_reserve_pct
+
+Ladění
+- Dočasné zapnutí debug logování (v configuration.yaml):
+```yaml
+logger:
+  default: warning
+  logs:
+    custom_components.gw_smart_charging: debug
+    homeassistant.config_entries: debug
+```
+
+Kontakt / podpora
+- Issues: https://github.com/someone11221/gw_smart_energy_charging/issues
+```
