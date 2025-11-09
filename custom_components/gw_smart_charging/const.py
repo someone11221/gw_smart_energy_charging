@@ -1,1 +1,18 @@
-DOMAIN = "gw_smart_charging"\nPLATFORMS = ["sensor"]\nDEFAULT_NAME = "GW Smart Charging Forecast"\nCONF_FORECAST_SENSOR = "forecast_sensor"\nCONF_PRICE_SENSOR = "price_sensor"\nCONF_GOODWE_SWITCH = "goodwe_switch"\nCONF_PV_POWER_SENSOR = "pv_power_sensor"\nCONF_SOC_SENSOR = "soc_sensor"\nCONF_BATTERY_CAPACITY = "battery_capacity_kwh"\nCONF_MAX_CHARGE_POWER = "max_charge_power_kw"\nCONF_CHARGE_EFFICIENCY = "charge_efficiency"\nCONF_MIN_RESERVE = "min_reserve_pct"\nCONF_ENABLE_AUTOMATION = "enable_automation"\nCONF_SWITCH_ON_MEANS_CHARGE = "switch_on_means_charge"\nDEFAULT_SCAN_INTERVAL = 900  # 15 minutes\nATTR_FORECAST = "forecast_next_day"
+# Constants for GW Smart Charging
+
+DOMAIN = "gw_smart_charging"
+PLATFORMS = ["sensor"]
+
+DEFAULT_NAME = "GW Smart Charging Forecast"
+
+CONF_FORECAST_SENSOR = "forecast_sensor"
+CONF_PRICE_SENSOR = "price_sensor"
+CONF_GOODWE_SWITCH = "goodwe_switch"
+CONF_PV_POWER_SENSOR = "pv_power_sensor"
+CONF_SOC_SENSOR = "soc_sensor"
+CONF_BATTERY_CAPACITY = "battery_capacity_kwh"
+CONF_MAX_CHARGE_POWER = "max_charge_power_kw"
+CONF_CHARGE_EFFICIENCY = "charge_efficiency"
+CONF_MIN_RESERVE = "min_reserve_pct"
+CONF_ENABLE_AUTOMATION = "enable_automation"
+CONF_SWITCH_ON_MEANS_CHARGE = "switch_on_means_charge"
