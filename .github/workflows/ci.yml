@@ -10,6 +10,8 @@ jobs:
   validate:
     name: Validate JSON and Python
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     
     steps:
     - name: Checkout code
