@@ -1,0 +1,37 @@
+name: Validate metadata
+
+on:
+  pull_request:
+    paths:
+      - 'hacs.json'
+      - 'custom_components/**/manifest.json'
+      - 'info.md'
+      - 'README.md'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate JSON files
+        run: |
+          python - <<'PY'
+import json,sys
+errors = False
+try:
+    json.load(open('hacs.json'))
+except Exception as e:
+    print('hacs.json invalid:', e); errors = True
+try:
+    json.load(open('custom_components/gw_smart_charging/manifest.json'))
+except Exception as e:
+    print('manifest.json invalid or missing:', e); errors = True
+if errors:
+    print('JSON validation found errors')
+else:
+    print('JSON OK')
+PY
+      - name: Run ruff (optional, non-blocking)
+        run: |
+          python -m pip install ruff >/dev/null
+          ruff check custom_components/gw_smart_charging || true
