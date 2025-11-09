@@ -1,0 +1,138 @@
+diff --git a/custom_components/gw_smart_charging/config_flow.py b/custom_components/gw_smart_charging/config_flow.py
+--- a/custom_components/gw_smart_charging/config_flow.py
++++ b/custom_components/gw_smart_charging/config_flow.py
+@@ -0,0 +1,204 @@
++from __future__ import annotations
++
++import voluptuous as vol
++from typing import Any
++
++from homeassistant import config_entries
++from homeassistant.const import CONF_NAME
++
++from .const import (
++    DOMAIN,
++    CONF_FORECAST_SENSOR,
++    CONF_PRICE_SENSOR,
++    CONF_GOODWE_SWITCH,
++    CONF_PV_POWER_SENSOR,
++    CONF_SOC_SENSOR,
++    CONF_BATTERY_CAPACITY,
++    CONF_MAX_CHARGE_POWER,
++    CONF_CHARGE_EFFICIENCY,
++    CONF_MIN_RESERVE,
++    CONF_ENABLE_AUTOMATION,
++    CONF_SWITCH_ON_MEANS_CHARGE,
++)
++
++
++class GWSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
++    """Config flow for GW Smart Charging."""
++
++    VERSION = 1
++    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
++
++    async def async_step_user(self, user_input: dict[str, Any] | None = None):
++        """Handle the initial step."""
++        errors: dict[str, str] = {}
++        if user_input is not None:
++            return self.async_create_entry(
++                title=user_input.get(CONF_NAME) or "GW Smart Charging", data=user_input
++            )
++
++        data_schema = vol.Schema(
++            {
++                vol.Required(CONF_NAME, default="GW Smart Charging"): str,
++                vol.Required(CONF_FORECAST_SENSOR, default=""): str,
++                vol.Required(CONF_PRICE_SENSOR, default=""): str,
++                vol.Optional(CONF_PV_POWER_SENSOR, default=""): str,
++                vol.Optional(CONF_GOODWE_SWITCH, default="switch.nabijeni_ze_site"): str,
++                vol.Optional(CONF_SOC_SENSOR, default="sensor.battery_state_of_charge"): str,
++                vol.Optional(CONF_BATTERY_CAPACITY, default=17): vol.Coerce(float),
++                vol.Optional(CONF_MAX_CHARGE_POWER, default=3.7): vol.Coerce(float),
++                vol.Optional(CONF_CHARGE_EFFICIENCY, default=0.95): vol.Coerce(float),
++                vol.Optional(CONF_MIN_RESERVE, default=10): vol.Coerce(float),
++                vol.Optional(CONF_ENABLE_AUTOMATION, default=True): bool,
++                vol.Optional(CONF_SWITCH_ON_MEANS_CHARGE, default=True): bool,
++            }
++        )
++
++        return self.async_show_form(step_id="user", data_schema=data_schema, errors=errors)
++
+diff --git a/custom_components/gw_smart_charging/__init__.py b/custom_components/gw_smart_charging/__init__.py
+--- a/custom_components/gw_smart_charging/__init__.py
++++ b/custom_components/gw_smart_charging/__init__.py
+@@ -0,0 +1,96 @@
++from __future__ import annotations
++
++import logging
++
++from homeassistant.config_entries import ConfigEntry
++from homeassistant.core import HomeAssistant
++
++from .const import DOMAIN, PLATFORMS
++
++_LOGGER = logging.getLogger(__name__)
++
++
++async def async_setup(hass: HomeAssistant, config) -> bool:
++    hass.data.setdefault(DOMAIN, {})
++    return True
++
++
++async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
++    hass.data.setdefault(DOMAIN, {})
++
++    from .coordinator import GWSmartCoordinator
++    from .services import async_setup_services
++
++    coordinator = GWSmartCoordinator(hass, entry)
++    await coordinator.async_config_entry_first_refresh()
++
++    hass.data[DOMAIN][entry.entry_id] = coordinator
++
++    hass.config_entries.async_setup_platforms(entry, PLATFORMS)
++
++    await async_setup_services(hass)
++
++    entry.async_on_unload(
++        entry.add_update_listener(lambda _h, e: hass.config_entries.async_reload(e.entry_id))
++    )
++    _LOGGER.debug("GW Smart Charging setup complete")
++    return True
++
++
++async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
++    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
++    if unload_ok:
++        hass.data[DOMAIN].pop(entry.entry_id, None)
++    return unload_ok
++
+diff --git a/custom_components/gw_smart_charging/manifest.json b/custom_components/gw_smart_charging/manifest.json
+--- a/custom_components/gw_smart_charging/manifest.json
++++ b/custom_components/gw_smart_charging/manifest.json
+@@ -1,9 +1,12 @@
+ {
+-  "domain": "gw_smart_charging",
+-  "name": "GW Smart Charging",
+-  "version": "1.0.0",
+-  "documentation": "https://github.com/someone11221/gw_smart_energy_charging",
+-  "requirements": [],
+-  "dependencies": ["goodwe"],
+-  "codeowners": ["@someone11221"],
+-  "iot_class": "local_polling",
+-  "config_flow": true,
+-  "issue_tracker": "https://github.com/someone11221/gw_smart_energy_charging/issues",
+-  "quality_scale": "platinum"
++  "domain": "gw_smart_charging",
++  "name": "GW Smart Charging",
++  "version": "1.0.5",
++  "documentation": "https://github.com/someone11221/gw_smart_energy_charging",
++  "requirements": [],
++  "dependencies": ["goodwe"],
++  "codeowners": ["@someone11221"],
++  "iot_class": "local_polling",
++  "config_flow": true,
++  "issue_tracker": "https://github.com/someone11221/gw_smart_energy_charging/issues",
++  "quality_scale": "platinum"
+ }
