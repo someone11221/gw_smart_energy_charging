@@ -5,6 +5,7 @@ Integrace propojuje GoodWe (goodwe integration) se solárním forecastem a cenam
 Co dělá
 - Vypočítává 24-hodinový plán nabíjení (mode: pv / grid / idle) a vystavuje jej v sensoru.
 - Podporuje UI config flow (přidání přes Settings → Devices & Services → Add integration).
+- Umožňuje rekonfiguraci senzorů a parametrů po instalaci (Options).
 - Nabízí služby:
   - gw_smart_charging.optimize_now
   - gw_smart_charging.apply_schedule_now
@@ -23,3 +24,9 @@ Konfigurace (UI)
 - soc_sensor: sensor stavu nabití baterie (SOC)
 - goodwe_switch: switch pro povolení/zakázání nabíjení ze sítě
 - battery_capacity_kwh, max_charge_power_kw, charge_efficiency, min_reserve_pct
+
+Rekonfigurace
+Pro změnu senzorů nebo parametrů:
+1. Settings → Devices & Services → GW Smart Charging
+2. Klikněte na "Configure" (ikona ozubeného kola)
+3. Upravte požadované hodnoty a uložte
