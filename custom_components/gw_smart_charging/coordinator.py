@@ -327,7 +327,7 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         return timestamps
 
     # ---------- NEW: simple forecast confidence ----------
-    def _compute_forecast_confidence(self, state, forecast_hourly: List[float]) -> Tuple[float, str, str, int]:
+    def _compute_forecast_confidence(self, state) -> Tuple[float, str, str, int]:
         """Return (score 0..1, reason, source_label, slots_count).
 
         Heuristic rules:
