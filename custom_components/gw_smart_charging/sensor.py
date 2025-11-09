@@ -23,12 +23,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         GWSmartStatusSensor(coordinator, entry.entry_id),
         GWSmartForecastSensor(coordinator, entry.entry_id),
         GWSmartPriceSensor(coordinator, entry.entry_id),
-        # series sensors for Lovelace plotting (names match existing ones in your instance)
+        GWSmartScheduleSensor(coordinator, entry.entry_id),
+        GWSmartSOCSensor(coordinator, entry.entry_id),
+        # series sensors for Lovelace plotting (15-min resolution)
         GWSmartSeriesSensor(coordinator, entry.entry_id, "pv"),
         GWSmartSeriesSensor(coordinator, entry.entry_id, "load"),
         GWSmartSeriesSensor(coordinator, entry.entry_id, "battery_charge"),
         GWSmartSeriesSensor(coordinator, entry.entry_id, "battery_discharge"),
         GWSmartSeriesSensor(coordinator, entry.entry_id, "grid_import"),
+        GWSmartSeriesSensor(coordinator, entry.entry_id, "soc_forecast"),
     ]
 
     async_add_entities(entities, True)
@@ -50,7 +53,7 @@ class GWSmartStatusSensor(CoordinatorEntity, SensorEntity):
 
 
 class GWSmartForecastSensor(CoordinatorEntity, SensorEntity):
-    """Sensor exposing hourly PV forecast (kW) plus planned schedule and timestamps."""
+    """Sensor exposing 15-min PV forecast (kW) plus planned schedule and timestamps."""
 
     def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
         super().__init__(coordinator)
@@ -62,29 +65,25 @@ class GWSmartForecastSensor(CoordinatorEntity, SensorEntity):
     def native_value(self) -> float:
         """Return a simple numeric state (peak kW) for quick overview."""
         data = self.coordinator.data or {}
-        hourly: List[float] = data.get("forecast_hourly") or []
-        if not hourly:
+        forecast_15min: List[float] = data.get("forecast_15min") or []
+        if not forecast_15min:
             return 0.0
-        return round(max(hourly), 3)
+        return round(max(forecast_15min), 3)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         data = self.coordinator.data or {}
-        hourly: List[float] = data.get("forecast_hourly") or [0.0] * 24
+        forecast_15min: List[float] = data.get("forecast_15min") or [0.0] * 96
         schedule: List[dict] = data.get("schedule") or []
-        plan_hourly = [s.get("mode", "idle") for s in schedule] if schedule else []
-        plan_power = [s.get("planned_power_kW", 0.0) for s in schedule] if schedule else []
         timestamps = data.get("timestamps") or []
-        # forecast confidence and metadata (may be added by coordinator)
+        # forecast confidence and metadata
         forecast_conf = data.get("forecast_confidence") or {}
         forecast_source = data.get("forecast_source", "")
         forecast_slots = data.get("forecast_slots_count", 0)
         return {
-            "hourly": hourly,
+            "forecast_15min": forecast_15min,
             "timestamps": timestamps,
-            "schedule": schedule,
-            "plan_hourly": plan_hourly,
-            "plan_power_kW": plan_power,
+            "schedule_15min": schedule,
             "forecast_confidence": forecast_conf,
             "forecast_source": forecast_source,
             "forecast_slots_count": forecast_slots,
@@ -92,7 +91,7 @@ class GWSmartForecastSensor(CoordinatorEntity, SensorEntity):
 
 
 class GWSmartPriceSensor(CoordinatorEntity, SensorEntity):
-    """Sensor exposing hourly prices. State = current hour price, attribute 'hourly' = list[24]."""
+    """Sensor exposing 15-min prices. State = current 15-min slot price, attribute 'price_15min' = list[96]."""
 
     def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
         super().__init__(coordinator)
@@ -103,84 +102,157 @@ class GWSmartPriceSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self) -> float:
-        """Return current hour price (CZK/kWh) if available."""
+        """Return current 15-min slot price (CZK/kWh) if available."""
         data = self.coordinator.data or {}
-        hourly: List[float] = data.get("price_hourly") or []
-        timestamps: List[str] = data.get("timestamps") or []
-        arr = hourly
-        if not arr:
+        price_15min: List[float] = data.get("price_15min") or []
+        if not price_15min:
             return 0.0
-        # pick value closest to now using timestamps if provided, else use current hour
-        try:
-            if timestamps and len(timestamps) >= len(arr):
-                now_ms = int(datetime.now().timestamp() * 1000)
-                # find index of timestamp closest to now
-                diffs = []
-                for t in timestamps[: len(arr)]:
-                    try:
-                        t_ms = int(datetime.fromisoformat(t).timestamp() * 1000)
-                    except Exception:
-                        # fallback: parse "HH:MM"
-                        if isinstance(t, str) and t.count(":") == 1:
-                            hh = int(t.split(":")[0])
-                            dt = datetime.now().replace(hour=hh, minute=0, second=0, microsecond=0)
-                            t_ms = int(dt.timestamp() * 1000)
-                        else:
-                            t_ms = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
-                    diffs.append(abs(now_ms - t_ms))
-                idx = diffs.index(min(diffs))
-                return round(float(arr[idx]), 4)
-            else:
-                hour = datetime.now().hour
-                return round(float(arr[hour]), 4)
-        except Exception:
-            return round(float(arr[0]), 4)
+        # Calculate current 15-min slot
+        now = datetime.now()
+        slot = now.hour * 4 + now.minute // 15
+        if 0 <= slot < len(price_15min):
+            return round(float(price_15min[slot]), 4)
+        return 0.0
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         data = self.coordinator.data or {}
-        hourly: List[float] = data.get("price_hourly") or [0.0] * 24
+        price_15min: List[float] = data.get("price_15min") or [0.0] * 96
         timestamps: List[str] = data.get("timestamps") or []
-        return {"hourly": hourly, "timestamps": timestamps}
+        return {"price_15min": price_15min, "timestamps": timestamps}
+
+
+class GWSmartScheduleSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing current charging plan and decision."""
+
+    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._attr_name = f"{DEFAULT_NAME} Schedule"
+        self._attr_unique_id = f"{entry_id}_schedule"
+
+    @property
+    def native_value(self) -> str:
+        """Return current mode from schedule."""
+        data = self.coordinator.data or {}
+        schedule: List[dict] = data.get("schedule") or []
+        if not schedule:
+            return "unknown"
+        # Get current 15-min slot
+        now = datetime.now()
+        slot = now.hour * 4 + now.minute // 15
+        if 0 <= slot < len(schedule):
+            return schedule[slot].get("mode", "unknown")
+        return "unknown"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self.coordinator.data or {}
+        schedule: List[dict] = data.get("schedule") or []
+        # Get current slot details
+        now = datetime.now()
+        slot = now.hour * 4 + now.minute // 15
+        current_slot = schedule[slot] if 0 <= slot < len(schedule) else {}
+        
+        # Count charging slots in next 24h
+        charging_slots = sum(1 for s in schedule if s.get("should_charge", False))
+        
+        return {
+            "full_schedule": schedule,
+            "current_slot": current_slot,
+            "charging_slots_today": charging_slots,
+            "current_mode": current_slot.get("mode", "unknown"),
+            "should_charge_now": current_slot.get("should_charge", False),
+            "current_price": current_slot.get("price_czk_kwh", 0.0),
+        }
+
+
+class GWSmartSOCSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing forecasted battery SOC throughout the day."""
+
+    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._attr_name = f"{DEFAULT_NAME} SOC Forecast"
+        self._attr_unique_id = f"{entry_id}_soc_forecast"
+        self._attr_unit_of_measurement = "%"
+
+    @property
+    def native_value(self) -> float:
+        """Return forecasted SOC at end of current slot."""
+        data = self.coordinator.data or {}
+        schedule: List[dict] = data.get("schedule") or []
+        if not schedule:
+            return 0.0
+        # Get current 15-min slot
+        now = datetime.now()
+        slot = now.hour * 4 + now.minute // 15
+        if 0 <= slot < len(schedule):
+            return schedule[slot].get("soc_pct_end", 0.0)
+        return 0.0
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self.coordinator.data or {}
+        schedule: List[dict] = data.get("schedule") or []
+        timestamps = data.get("timestamps") or []
+        
+        # Extract SOC forecast as list
+        soc_forecast = [s.get("soc_pct_end", 0.0) for s in schedule]
+        
+        # Find min/max SOC in forecast
+        min_soc = min(soc_forecast) if soc_forecast else 0.0
+        max_soc = max(soc_forecast) if soc_forecast else 0.0
+        
+        return {
+            "soc_forecast_15min": soc_forecast,
+            "timestamps": timestamps,
+            "min_soc_pct": round(min_soc, 2),
+            "max_soc_pct": round(max_soc, 2),
+        }
 
 
 class GWSmartSeriesSensor(CoordinatorEntity, SensorEntity):
-    """Generic series sensor for Lovelace plotting.
+    """Generic series sensor for Lovelace plotting with 15-min resolution.
 
-    series_type in {"pv","load","battery_charge","battery_discharge","grid_import"}
+    series_type in {"pv","load","battery_charge","battery_discharge","grid_import","soc_forecast"}
     Exposes attributes:
-      - hourly: list[24] of floats (kW)
-      - timestamps: list[24] of ISO hour labels (strings)
-    State is current hour value (float) chosen by nearest timestamp.
+      - data_15min: list[96] of floats (kW or % for SOC)
+      - timestamps: list[96] of ISO 15-min labels (strings)
+    State is current 15-min slot value (float).
     """
 
     def __init__(self, coordinator: GWSmartCoordinator, entry_id: str, series_type: str) -> None:
         super().__init__(coordinator)
         self._entry_id = entry_id
         self.series_type = series_type
-        # Names and unique_ids include "forecast" part so they match existing entity ids in your system
         self._attr_name = f"{DEFAULT_NAME} Series {series_type}"
         self._attr_unique_id = f"{entry_id}_series_{series_type}"
-        self._attr_unit_of_measurement = "kW"
+        if series_type == "soc_forecast":
+            self._attr_unit_of_measurement = "%"
+        else:
+            self._attr_unit_of_measurement = "kW"
 
     def _build_series_from_schedule(self, schedule: List[dict]) -> List[float]:
-        # Derive series from schedule data
+        # Derive series from 15-min schedule data
         pv = []
         load = []
-        planned = []
-        net_pv = []
+        planned_charge = []
+        soc_forecast = []
+        
         for s in schedule:
             pv_val = float(s.get("pv_power_kW", 0.0))
             load_val = float(s.get("load_kW", 0.0))
-            planned_val = float(s.get("planned_power_kW", 0.0))  # positive = charge, negative = discharge
-            net = pv_val - load_val
+            planned_val = float(s.get("planned_charge_kW", 0.0))  # positive = charge, negative = discharge
+            soc_val = float(s.get("soc_pct_end", 0.0))
+            
             pv.append(round(pv_val, 3))
             load.append(round(load_val, 3))
-            planned.append(round(planned_val, 3))
-            net_pv.append(round(net, 3))
+            planned_charge.append(round(planned_val, 3))
+            soc_forecast.append(round(soc_val, 2))
 
-        battery_charge = [p if p > 0 else 0.0 for p in planned]
-        battery_discharge = [-p if p < 0 else 0.0 for p in planned]
+        battery_charge = [p if p > 0 else 0.0 for p in planned_charge]
+        battery_discharge = [-p if p < 0 else 0.0 for p in planned_charge]
 
         grid_import = []
         for i in range(len(pv)):
@@ -200,75 +272,57 @@ class GWSmartSeriesSensor(CoordinatorEntity, SensorEntity):
             "battery_charge": battery_charge,
             "battery_discharge": battery_discharge,
             "grid_import": grid_import,
-            "net_pv": net_pv,
+            "soc_forecast": soc_forecast,
         }
-        return mapping.get(self.series_type, [0.0] * 24)
+        return mapping.get(self.series_type, [0.0] * 96)
 
     def _build_series_from_fallback(self, coordinator_data: dict) -> List[float]:
-        # fallback: use forecast_hourly and load_hourly if schedule absent
-        forecast = coordinator_data.get("forecast_hourly") or [0.0] * 24
-        load = coordinator_data.get("load_hourly") or [0.0] * 24
-        net_pv = [round(forecast[i] - load[i], 3) for i in range(24)]
-        battery_charge = [0.0] * 24
-        battery_discharge = [0.0] * 24
-        grid_import = [max(0.0, load[i] - forecast[i]) for i in range(24)]
+        # fallback: use 15min data if schedule absent
+        forecast = coordinator_data.get("forecast_15min") or [0.0] * 96
+        load = coordinator_data.get("load_15min") or [0.0] * 96
+        battery_charge = [0.0] * 96
+        battery_discharge = [0.0] * 96
+        grid_import = [max(0.0, load[i] - forecast[i]) for i in range(96)]
+        soc_forecast = [50.0] * 96  # flat 50% if no data
+        
         mapping = {
             "pv": forecast,
             "load": load,
             "battery_charge": battery_charge,
             "battery_discharge": battery_discharge,
             "grid_import": grid_import,
-            "net_pv": net_pv,
+            "soc_forecast": soc_forecast,
         }
-        return mapping.get(self.series_type, [0.0] * 24)
+        return mapping.get(self.series_type, [0.0] * 96)
 
     def _build_timestamps(self, coordinator_data: dict) -> List[str]:
-        # Prefer coordinator timestamps if provided; otherwise build simple "HH:MM" labels
+        # Prefer coordinator timestamps if provided; otherwise build simple "HH:MM" labels for 15-min
         timestamps = coordinator_data.get("timestamps")
-        if isinstance(timestamps, list) and len(timestamps) >= 24:
-            return timestamps[:24]
+        if isinstance(timestamps, list) and len(timestamps) >= 96:
+            return timestamps[:96]
+        # Build 15-min labels
         labels = []
         for h in range(24):
-            labels.append(f"{h:02d}:00")
+            for m in [0, 15, 30, 45]:
+                labels.append(f"{h:02d}:{m:02d}")
         return labels
-
-    def _value_for_nearest_timestamp(self, arr: List[float], timestamps: List[str]) -> float:
-        """Return value from arr at index nearest to now using provided ISO timestamps if possible."""
-        if not arr:
-            return 0.0
-        try:
-            if timestamps and len(timestamps) >= len(arr):
-                now_ms = int(datetime.now().timestamp() * 1000)
-                diffs = []
-                for t in timestamps[: len(arr)]:
-                    try:
-                        t_ms = int(datetime.fromisoformat(t).timestamp() * 1000)
-                    except Exception:
-                        if isinstance(t, str) and t.count(":") == 1:
-                            hh = int(t.split(":")[0])
-                            dt = datetime.now().replace(hour=hh, minute=0, second=0, microsecond=0)
-                            t_ms = int(dt.timestamp() * 1000)
-                        else:
-                            t_ms = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
-                    diffs.append(abs(now_ms - t_ms))
-                idx = diffs.index(min(diffs))
-                return round(float(arr[idx]), 3)
-            else:
-                idx = datetime.now().hour
-                return round(float(arr[idx]), 3)
-        except Exception:
-            return round(float(arr[0]), 3)
 
     @property
     def native_value(self) -> float:
+        """Return value for current 15-min slot."""
         data = self.coordinator.data or {}
         schedule = data.get("schedule")
         if schedule:
             arr = self._build_series_from_schedule(schedule)
         else:
             arr = self._build_series_from_fallback(data)
-        timestamps = data.get("timestamps") or []
-        return self._value_for_nearest_timestamp(arr, timestamps)
+        
+        # Get current 15-min slot
+        now = datetime.now()
+        slot = now.hour * 4 + now.minute // 15
+        if 0 <= slot < len(arr):
+            return round(float(arr[slot]), 3 if self.series_type != "soc_forecast" else 2)
+        return 0.0
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -279,4 +333,4 @@ class GWSmartSeriesSensor(CoordinatorEntity, SensorEntity):
         else:
             arr = self._build_series_from_fallback(data)
         timestamps = self._build_timestamps(data)
-        return {"hourly": arr, "timestamps": timestamps}
+        return {"data_15min": arr, "timestamps": timestamps}
