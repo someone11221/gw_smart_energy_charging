@@ -92,13 +92,155 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         except Exception as err:
             raise UpdateFailed(err) from err
 
+    def _parse_forecast_sensor(self, state) -> List[float]:
+        """Normalize forecast sensor to 24 hourly kW values.
+
+        Supports attribute 'watts' mapping timestamp->W, attribute 'hourly' (list kW),
+        attribute 'forecast' list, or scalar total kWh.
+        """
+        attrs = state.attributes or {}
+        # 'watts' mapping (15min -> W)
+        watts = attrs.get("watts")
+        if isinstance(watts, dict) and watts:
+            return self._aggregate_timeseries_map_to_hourly(watts, value_in_watts=True)
+
+        # already hourly list
+        hourly = attrs.get("hourly") or attrs.get("hourly_kw") or attrs.get("hourly_kwh")
+        if isinstance(hourly, list) and len(hourly) >= 24:
+            return [round(float(x), 3) for x in hourly[:24]]
+
+        # forecast list of dicts
+        items = attrs.get("forecast") or attrs.get("values") or attrs.get("data")
+        if isinstance(items, list) and items:
+            # if it's a list of numbers
+            if all(isinstance(x, (int, float)) for x in items) and len(items) >= 24:
+                return [round(float(x), 3) for x in items[:24]]
+            # otherwise parse dict items
+            result_hour = [0.0] * 24
+            cnt = [0] * 24
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                pe = it.get("period_end") or it.get("datetime") or it.get("time")
+                val = it.get("pv_estimate") or it.get("pv_estimate_kw") or it.get("value") or it.get("pv_estimate_w")
+                if val is None or pe is None:
+                    continue
+                try:
+                    hour = None
+                    if isinstance(pe, str):
+                        try:
+                            hour = datetime.fromisoformat(pe).hour
+                        except Exception:
+                            if len(pe) >= 13:
+                                hour = int(pe[11:13])
+                    if hour is None:
+                        continue
+                    v = float(val)
+                    if isinstance(it.get("pv_estimate_w"), (int, float)) or ("pv_estimate_w" in it):
+                        v = v / 1000.0
+                    elif v > 1000:
+                        v = v / 1000.0
+                    result_hour[hour] += v
+                    cnt[hour] += 1
+                except Exception:
+                    continue
+            out = []
+            for h in range(24):
+                if cnt[h] > 0:
+                    out.append(round(result_hour[h] / cnt[h], 3))
+                else:
+                    out.append(0.0)
+            return out
+
+        # fallback: try parse state scalar as total kWh -> distribute evenly
+        try:
+            total = float(state.state)
+            per_hour = total / 24.0
+            return [round(per_hour, 3) for _ in range(24)]
+        except Exception:
+            _LOGGER.debug("Unable to parse forecast sensor %s attributes %s", state.entity_id, list(attrs.keys()))
+            return [0.0] * 24
+
+    def _parse_price_sensor(self, state) -> List[float]:
+        """Normalize price sensor to 24 hourly currency/kWh values.
+
+        Supports attributes tomorrow_hourly_prices / today_hourly_prices list or mapping timestamp->price.
+        """
+        attrs = state.attributes or {}
+        tomorrow = attrs.get("tomorrow_hourly_prices")
+        if isinstance(tomorrow, list) and len(tomorrow) >= 24:
+            return [round(float(x), 4) for x in tomorrow[:24]]
+
+        today = attrs.get("today_hourly_prices")
+        if isinstance(today, list) and len(today) >= 24:
+            return [round(float(x), 4) for x in today[:24]]
+
+        # mapping timestamp->price
+        for keyname in ("prices", "values", "prices_map", "price_map"):
+            mapping = attrs.get(keyname)
+            if isinstance(mapping, dict) and mapping:
+                return self._aggregate_timeseries_map_to_hourly(mapping, value_in_watts=False, unit=state.attributes.get("unit_of_measurement", ""))
+
+        # forecast list of dicts with period_end + price
+        items = attrs.get("forecast") or attrs.get("data") or None
+        if isinstance(items, list) and items:
+            result_hour = [0.0] * 24
+            cnt = [0] * 24
+            unit = state.attributes.get("unit_of_measurement", "")
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                pe = it.get("period_end") or it.get("datetime") or it.get("time")
+                val = it.get("price") or it.get("value") or it.get("price_czk")
+                if val is None or pe is None:
+                    continue
+                try:
+                    hour = None
+                    if isinstance(pe, str):
+                        try:
+                            hour = datetime.fromisoformat(pe).hour
+                        except Exception:
+                            if len(pe) >= 13:
+                                hour = int(pe[11:13])
+                    if hour is None:
+                        continue
+                    v = float(val)
+                    # convert from MWh to kWh if unit indicates
+                    if unit and ("MWh" in unit or "/MWh" in unit):
+                        v = v / 1000.0
+                    result_hour[hour] += v
+                    cnt[hour] += 1
+                except Exception:
+                    continue
+            out = []
+            for h in range(24):
+                if cnt[h] > 0:
+                    out.append(round(result_hour[h] / cnt[h], 4))
+                else:
+                    out.append(0.0)
+            return out
+
+        # 4) fallback: if state is comma-separated list or JSON array
+        try:
+            s = state.state
+            if isinstance(s, str) and s.startswith("[") and s.endswith("]"):
+                import json
+                arr = json.loads(s)
+                if isinstance(arr, list) and len(arr) >= 24:
+                    return [round(float(x), 4) for x in arr[:24]]
+        except Exception:
+            pass
+
+        _LOGGER.debug("Unable to parse price sensor %s attributes %s unit=%s", state.entity_id, list(attrs.keys()), state.attributes.get("unit_of_measurement"))
+        return [0.0] * 24
+
     def _parse_load_sensor(self, state, entity_id: Optional[str] = None) -> List[float]:
         """Normalize load (house consumption) sensor to 24 hourly kW values.
 
-        Supports:
-        - attribute 'yesterday_hourly' or 'today_hourly' (lists of 24 numbers)
-        - attribute mapping timestamp->W (15min slots) in 'watts' or 'values'
-        - state as JSON array
+        Supported formats:
+        - attribute 'yesterday_hourly' or 'today_hourly' as list of 24 numbers (kW or W)
+        - attribute mapping timestamp->W (15min slots) in attribute 'watts' or 'values'
+        - state as single number (current power) used as flat profile (converted to kW if likely in W)
         - OR daily cumulative sensor (reset at midnight) — detect via 'last_reset' attribute, device_class energy, or entity_id matches
           In that case:
             - if yesterday_hourly attribute available => use it for full profile
@@ -107,11 +249,11 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         """
         attrs = state.attributes or {}
 
-        # 1) explicit hourly lists
+        # 1) yesterday_hourly / today_hourly lists
         for key in ("yesterday_hourly", "today_hourly", "today_hourly_consumption", "yesterday_hourly_consumption"):
             arr = attrs.get(key)
             if isinstance(arr, list) and len(arr) >= 24:
-                # if values in W -> convert to kW heuristically
+                # detect if values are in W (large) -> convert to kW
                 try:
                     sample = float(arr[0]) if arr else 0.0
                     factor = 1000.0 if abs(sample) > 1000 else 1.0
