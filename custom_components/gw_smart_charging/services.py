@@ -1,1 +1,28 @@
-from __future__ import annotations\nfrom homeassistant.core import HomeAssistant, ServiceCall\n\nfrom .const import DOMAIN\n\n_LOGGER = logging.getLogger(__name__)\n\nasync def async_setup_services(hass: HomeAssistant):\n    hass.services.async_register(DOMAIN, "optimize_now", _handle_optimize_now)\n    hass.services.async_register(DOMAIN, "apply_schedule_now", _handle_apply_schedule_now)\n\nasync def _handle_optimize_now(call: ServiceCall):\n    hass = call.hass\n    for entry_id, coord in hass.data.get(DOMAIN, {}).items():\n        await coord.async_request_refresh()\n\nasync def _handle_apply_schedule_now(call: ServiceCall):\n    hass = call.hass\n    for entry_id, coord in hass.data.get(DOMAIN, {}).items():\n        await coord.apply_current_hour()
+from __future__ import annotations
+
+import logging
+
+from homeassistant.core import HomeAssistant, ServiceCall
+
+from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
+
+SERVICE_OPTIMIZE = "optimize_now"
+SERVICE_APPLY = "apply_schedule_now"
+
+
+async def async_setup_services(hass: HomeAssistant) -> None:
+    """Register services for the integration (placeholders)."""
+
+    async def _optimize(call: ServiceCall) -> None:
+        _LOGGER.info("Service optimize_now called: %s", call.data)
+        # placeholder - trigger immediate recalculation
+        # Real implementation should call coordinator methods / algorithms.
+
+    async def _apply(call: ServiceCall) -> None:
+        _LOGGER.info("Service apply_schedule_now called: %s", call.data)
+        # placeholder - apply schedule to switches
+
+    hass.services.async_register(DOMAIN, SERVICE_OPTIMIZE, _optimize)
+    hass.services.async_register(DOMAIN, SERVICE_APPLY, _apply)
