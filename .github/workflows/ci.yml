@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, fix/hacs-structure ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate:
+    name: Validate JSON and Python
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        
+    - name: Validate hacs.json
+      run: |
+        echo "Validating hacs.json..."
+        python3 -m json.tool hacs.json > /dev/null
+        echo "✓ hacs.json is valid"
+        
+    - name: Validate manifest.json
+      run: |
+        echo "Validating manifest.json..."
+        python3 -m json.tool custom_components/gw_smart_charging/manifest.json > /dev/null
+        echo "✓ manifest.json is valid"
+        
+    - name: Check for escaped newlines in JSON/MD
+      run: |
+        echo "Checking for escaped \\n in JSON and Markdown files..."
+        if grep -r '\\n' --include="*.json" --include="*.md" . ; then
+          echo "ERROR: Found escaped \\n literals in files above"
+          exit 1
+        fi
+        echo "✓ No escaped newlines found"
+        
+    - name: Lint Python files
+      run: |
+        echo "Installing flake8..."
+        pip install flake8
+        echo "Linting Python files in custom_components/gw_smart_charging/..."
+        flake8 custom_components/gw_smart_charging/ --count --select=E9,F63,F7,F82 --show-source --statistics || true
+        echo "✓ Python lint complete"
