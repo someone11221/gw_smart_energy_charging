@@ -17,6 +17,8 @@ from .const import (
     CONF_LOAD_SENSOR,
     CONF_DAILY_LOAD_SENSOR,
     CONF_SOC_SENSOR,
+    CONF_BATTERY_POWER_SENSOR,
+    CONF_GRID_IMPORT_SENSOR,
     CONF_BATTERY_CAPACITY,
     CONF_MAX_CHARGE_POWER,
     CONF_CHARGE_EFFICIENCY,
@@ -25,6 +27,11 @@ from .const import (
     CONF_TARGET_SOC,
     CONF_ALWAYS_CHARGE_PRICE,
     CONF_NEVER_CHARGE_PRICE,
+    CONF_PRICE_HYSTERESIS,
+    CONF_CRITICAL_HOURS_START,
+    CONF_CRITICAL_HOURS_END,
+    CONF_CRITICAL_HOURS_SOC,
+    CONF_ENABLE_ML_PREDICTION,
     DEFAULT_BATTERY_CAPACITY,
     DEFAULT_MAX_CHARGE_POWER,
     DEFAULT_CHARGE_EFFICIENCY,
@@ -33,6 +40,11 @@ from .const import (
     DEFAULT_TARGET_SOC,
     DEFAULT_ALWAYS_CHARGE_PRICE,
     DEFAULT_NEVER_CHARGE_PRICE,
+    DEFAULT_PRICE_HYSTERESIS,
+    DEFAULT_CRITICAL_HOURS_START,
+    DEFAULT_CRITICAL_HOURS_END,
+    DEFAULT_CRITICAL_HOURS_SOC,
+    DEFAULT_ENABLE_ML_PREDICTION,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,6 +65,9 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         # cache to accumulate cumulative daily deltas while running
         self._last_daily_cumulative: Optional[float] = None
         self._last_daily_date: Optional[date] = None
+        # Machine learning data - store last 30 days of hourly consumption patterns
+        self._ml_history: List[List[float]] = []  # List of 24-hour patterns
+        self._last_charging_state: bool = False  # For hysteresis tracking
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch and normalize forecast, price and load data and compute 15-min schedule."""
@@ -95,12 +110,20 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                 else:
                     _LOGGER.debug("Price sensor %s not found", price_sensor)
 
-            # Parse load - use daily sensor for historical pattern if available
+            # Parse load - use ML prediction if enabled, otherwise use daily sensor
+            ml_enabled = self.config.get(CONF_ENABLE_ML_PREDICTION, DEFAULT_ENABLE_ML_PREDICTION)
             if daily_load_sensor:
                 state_daily = self.hass.states.get(daily_load_sensor)
                 if state_daily:
-                    _LOGGER.debug("Parsing daily load pattern from %s", daily_load_sensor)
-                    load_15min = self._parse_daily_load_pattern_15min(state_daily)
+                    if ml_enabled:
+                        _LOGGER.debug("Using ML prediction for load pattern")
+                        load_15min = self._ml_predict_load_pattern(state_daily)
+                        # Update ML history with current actual consumption
+                        current_actual = self._parse_daily_load_pattern_15min(state_daily)
+                        self._update_ml_history(current_actual)
+                    else:
+                        _LOGGER.debug("Parsing daily load pattern from %s", daily_load_sensor)
+                        load_15min = self._parse_daily_load_pattern_15min(state_daily)
             
             # Fallback to current consumption sensor
             if not any(load_15min) and load_sensor:
@@ -224,6 +247,41 @@ class GWSmartCoordinator(DataUpdateCoordinator):
             return [current_kw] * 96
         except Exception:
             return [0.0] * 96
+    
+    def _ml_predict_load_pattern(self, daily_load_sensor_state) -> List[float]:
+        """Use machine learning (simple averaging) to predict consumption pattern from history."""
+        # Simple ML: average of last N days' patterns
+        # In production, this could be enhanced with:
+        # - Weekday vs weekend patterns
+        # - Seasonal adjustments
+        # - Weather correlation
+        # - sklearn for more sophisticated prediction
+        
+        if not self._ml_history:
+            # No history yet, fall back to current day pattern
+            return self._parse_daily_load_pattern_15min(daily_load_sensor_state)
+        
+        # Average the historical patterns
+        prediction = [0.0] * 96
+        for hist_pattern in self._ml_history:
+            for i in range(min(96, len(hist_pattern))):
+                prediction[i] += hist_pattern[i]
+        
+        # Normalize by number of patterns
+        count = len(self._ml_history)
+        prediction = [p / count for p in prediction]
+        
+        _LOGGER.debug(f"ML prediction based on {count} historical patterns")
+        return prediction
+    
+    def _update_ml_history(self, current_pattern: List[float]) -> None:
+        """Update ML history with current day's pattern (keep last 30 days)."""
+        if len(current_pattern) == 96:
+            self._ml_history.append(current_pattern)
+            # Keep only last 30 days
+            if len(self._ml_history) > 30:
+                self._ml_history = self._ml_history[-30:]
+            _LOGGER.debug(f"ML history updated: {len(self._ml_history)} patterns stored")
     
     def _build_forecast_timestamps_15min(self, state) -> List[str]:
         """Build list of 96 ISO timestamps for 15-min intervals (for day after tomorrow if _d2 sensor)."""
@@ -610,7 +668,7 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         return out
 
     def _compute_schedule_15min(self, forecast: List[float], prices: List[float], loads: List[float]) -> List[Dict[str, Any]]:
-        """Compute optimized 15-min charging schedule based on forecast, prices, and load.
+        """Compute optimized 15-min charging schedule with hysteresis and critical hours support.
         
         Returns list[96] with dicts for each 15-min slot:
         { slot, time, mode, pv_power_kW, load_kW, net_pv_kW, price_czk_kwh, 
@@ -623,6 +681,8 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         4. Always charge if price below always_charge_price AND battery below target
         5. Respect min/max SOC limits
         6. Consider solar forecast to avoid charging from grid if solar will cover needs
+        7. Apply hysteresis to prevent rapid switching near price thresholds
+        8. Maintain higher SOC during critical hours
         """
         # Read config params
         capacity = float(self.config.get(CONF_BATTERY_CAPACITY, DEFAULT_BATTERY_CAPACITY))
@@ -635,6 +695,23 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         
         always_charge_price = float(self.config.get(CONF_ALWAYS_CHARGE_PRICE, DEFAULT_ALWAYS_CHARGE_PRICE))
         never_charge_price = float(self.config.get(CONF_NEVER_CHARGE_PRICE, DEFAULT_NEVER_CHARGE_PRICE))
+        hysteresis_pct = float(self.config.get(CONF_PRICE_HYSTERESIS, DEFAULT_PRICE_HYSTERESIS))
+        
+        # Critical hours configuration
+        critical_start = int(self.config.get(CONF_CRITICAL_HOURS_START, DEFAULT_CRITICAL_HOURS_START))
+        critical_end = int(self.config.get(CONF_CRITICAL_HOURS_END, DEFAULT_CRITICAL_HOURS_END))
+        critical_soc_pct = float(self.config.get(CONF_CRITICAL_HOURS_SOC, DEFAULT_CRITICAL_HOURS_SOC))
+        
+        # Calculate hysteresis bands
+        hysteresis_factor = hysteresis_pct / 100.0
+        if self._last_charging_state:
+            # If we were charging, make it harder to stop (upper band)
+            always_charge_threshold = always_charge_price * (1 + hysteresis_factor)
+            never_charge_threshold = never_charge_price * (1 + hysteresis_factor)
+        else:
+            # If we were not charging, make it harder to start (lower band)
+            always_charge_threshold = always_charge_price * (1 - hysteresis_factor)
+            never_charge_threshold = never_charge_price * (1 - hysteresis_factor)
 
         # Get initial SOC
         initial_soc_frac = 0.5  # default 50%
@@ -652,8 +729,10 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         min_soc_kwh = capacity * (min_soc_pct / 100.0)
         max_soc_kwh = capacity * (max_soc_pct / 100.0)
         target_soc_kwh = capacity * (target_soc_pct / 100.0)
+        critical_soc_kwh = capacity * (critical_soc_pct / 100.0)
 
         schedule: List[Dict[str, Any]] = []
+        current_should_charge = False
         
         # First pass: identify cheap charging opportunities and solar surplus
         for slot in range(96):
@@ -663,6 +742,20 @@ class GWSmartCoordinator(DataUpdateCoordinator):
             
             # 15-min interval = 0.25 hours
             interval_hours = 0.25
+            
+            # Calculate time for this slot
+            hour = slot // 4
+            minute = (slot % 4) * 15
+            
+            # Check if in critical hours
+            is_critical_hour = False
+            if critical_start <= critical_end:
+                is_critical_hour = critical_start <= hour < critical_end
+            else:  # Crosses midnight
+                is_critical_hour = hour >= critical_start or hour < critical_end
+            
+            # Adjust target SOC for critical hours
+            effective_target_soc_kwh = critical_soc_kwh if is_critical_hour else target_soc_kwh
             
             # Net solar after house consumption
             net_pv_kw = pv_kw - load_kw
@@ -698,11 +791,11 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                 mode = "battery_discharge"
                 should_charge = False
             
-            # Priority 3: Grid charging based on price thresholds
-            if soc_kwh < target_soc_kwh:
-                # Check price conditions
+            # Priority 3: Grid charging based on price thresholds with hysteresis
+            if soc_kwh < effective_target_soc_kwh:
+                # Check price conditions with hysteresis
                 if price > 0:
-                    if price <= always_charge_price:
+                    if price <= always_charge_threshold:
                         # Very cheap - always charge
                         capacity_left_kwh = max_soc_kwh - soc_kwh
                         if capacity_left_kwh > 0.01:
@@ -713,15 +806,19 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                             planned_charge_kw = charge_kw
                             mode = "grid_charge_cheap"
                             should_charge = True
+                            current_should_charge = True
                     
-                    elif price < never_charge_price:
-                        # Moderate price - consider charging if below target
+                    elif price < never_charge_threshold:
+                        # Moderate price - consider charging if below effective target
                         # Only charge if not expecting enough solar to reach target
                         future_solar_kwh = sum(forecast[slot:]) * interval_hours
                         future_load_kwh = sum(loads[slot:]) * interval_hours
                         expected_net_solar = future_solar_kwh - future_load_kwh
                         
-                        if (soc_kwh + expected_net_solar * eff) < target_soc_kwh:
+                        # For critical hours, be more aggressive about charging
+                        target_to_check = effective_target_soc_kwh if is_critical_hour else target_soc_kwh
+                        
+                        if (soc_kwh + expected_net_solar * eff) < target_to_check:
                             capacity_left_kwh = max_soc_kwh - soc_kwh
                             if capacity_left_kwh > 0.01:
                                 charge_kw = min(max_charge, capacity_left_kwh / interval_hours)
@@ -729,12 +826,17 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                                 stored_kwh = charge_kwh * eff
                                 soc_kwh += stored_kwh
                                 planned_charge_kw = charge_kw
-                                mode = "grid_charge_optimal"
+                                mode = "grid_charge_optimal" if not is_critical_hour else "grid_charge_critical"
                                 should_charge = True
+                                current_should_charge = True
             
             # Ensure SOC stays within bounds
             soc_kwh = max(min_soc_kwh, min(max_soc_kwh, soc_kwh))
             soc_pct = (soc_kwh / capacity) * 100.0
+            
+            # Update charging state for next iteration's hysteresis
+            if should_charge:
+                self._last_charging_state = True
             
             # Time calculation
             hour = slot // 4
@@ -753,7 +855,12 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                 "soc_kwh_end": round(soc_kwh, 3),
                 "soc_pct_end": round(soc_pct, 2),
                 "should_charge": should_charge,
+                "is_critical_hour": is_critical_hour,
             })
+        
+        # Update final charging state after all slots computed
+        if schedule:
+            self._last_charging_state = schedule[-1].get("should_charge", False)
         
         return schedule
 
