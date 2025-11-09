@@ -1,7 +1,0 @@
-{
-  "name": "GW Smart Energy Charging",
-  "hacs": "1.6.0",
-  "domains": ["sensor", "switch"],
-  "iot_class": "Local Polling",
-  "homeassistant": "2024.1.0"
-}
