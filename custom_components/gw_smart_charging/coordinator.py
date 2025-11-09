@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List, Optional
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, date
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -12,6 +12,7 @@ from .const import (
     DOMAIN,
     CONF_FORECAST_SENSOR,
     CONF_PRICE_SENSOR,
+    CONF_LOAD_SENSOR,
     CONF_SOC_SENSOR,
     CONF_BATTERY_CAPACITY,
     CONF_MAX_CHARGE_POWER,
@@ -23,7 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class GWSmartCoordinator(DataUpdateCoordinator):
-    """Coordinator that reads forecast and price sensors and produces a charging schedule."""
+    """Coordinator that reads forecast, price and load sensors and produces a charging schedule."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         super().__init__(
@@ -34,15 +35,20 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         )
         self.entry = entry
         self.config: dict[str, Any] = entry.data or {}
+        # cache to accumulate cumulative daily deltas while running
+        self._last_daily_cumulative: Optional[float] = None
+        self._last_daily_date: Optional[date] = None
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch and normalize forecast and price data and compute schedule."""
+        """Fetch and normalize forecast, price and load data and compute schedule."""
         try:
             forecast_sensor = self.config.get(CONF_FORECAST_SENSOR)
             price_sensor = self.config.get(CONF_PRICE_SENSOR)
+            load_sensor = self.config.get(CONF_LOAD_SENSOR)
 
             forecast_hourly: List[float] = [0.0] * 24
             price_hourly: List[float] = [0.0] * 24
+            load_hourly: List[float] = [0.0] * 24
 
             # Parse forecast
             if forecast_sensor:
@@ -62,148 +68,152 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                 else:
                     _LOGGER.debug("Price sensor %s not found", price_sensor)
 
-            # Compute schedule
-            schedule = self._compute_schedule(forecast_hourly, price_hourly)
+            # Parse load (supports hourly sensors, mapping, or daily cumulative that resets at midnight)
+            if load_sensor:
+                state = self.hass.states.get(load_sensor)
+                if state:
+                    _LOGGER.debug("Parsing load from %s (state=%s)", load_sensor, state.state)
+                    load_hourly = self._parse_load_sensor(state, load_sensor)
+                    _LOGGER.debug("Aggregated hourly load: %s", load_hourly)
+                else:
+                    _LOGGER.debug("Load sensor %s not found", load_sensor)
+
+            # Compute schedule (incorporates load)
+            schedule = self._compute_schedule(forecast_hourly, price_hourly, load_hourly)
 
             return {
                 "status": "ok",
                 "forecast_hourly": forecast_hourly,
                 "price_hourly": price_hourly,
+                "load_hourly": load_hourly,
                 "schedule": schedule,
                 "last_update": datetime.utcnow().isoformat(),
             }
         except Exception as err:
             raise UpdateFailed(err) from err
 
-    def _parse_forecast_sensor(self, state) -> List[float]:
-        """Normalize forecast sensor to 24 hourly kW values.
+    def _parse_load_sensor(self, state, entity_id: Optional[str] = None) -> List[float]:
+        """Normalize load (house consumption) sensor to 24 hourly kW values.
 
-        Supports attribute 'watts' mapping timestamp->W, attribute 'hourly' (list kW),
-        attribute 'forecast' list, or scalar total kWh.
+        Supports:
+        - attribute 'yesterday_hourly' or 'today_hourly' (lists of 24 numbers)
+        - attribute mapping timestamp->W (15min slots) in 'watts' or 'values'
+        - state as JSON array
+        - OR daily cumulative sensor (reset at midnight) — detect via 'last_reset' attribute, device_class energy, or entity_id matches
+          In that case:
+            - if yesterday_hourly attribute available => use it for full profile
+            - else if current cumulative present and time is e.g. 14:00 => distribute current cumulative evenly across passed hours
+              (this gives an immediate estimate and will be refined as new readings arrive)
         """
         attrs = state.attributes or {}
-        # 'watts' mapping (15min -> W)
-        watts = attrs.get("watts")
-        if isinstance(watts, dict) and watts:
-            return self._aggregate_timeseries_map_to_hourly(watts, value_in_watts=True)
 
-        # already hourly list
-        hourly = attrs.get("hourly") or attrs.get("hourly_kw") or attrs.get("hourly_kwh")
-        if isinstance(hourly, list) and len(hourly) >= 24:
-            return [round(float(x), 3) for x in hourly[:24]]
-
-        # forecast list of dicts
-        items = attrs.get("forecast") or attrs.get("values") or attrs.get("data")
-        if isinstance(items, list) and items:
-            # if it's a list of numbers
-            if all(isinstance(x, (int, float)) for x in items) and len(items) >= 24:
-                return [round(float(x), 3) for x in items[:24]]
-            # otherwise parse dict items
-            result_hour = [0.0] * 24
-            cnt = [0] * 24
-            for it in items:
-                if not isinstance(it, dict):
-                    continue
-                pe = it.get("period_end") or it.get("datetime") or it.get("time")
-                val = it.get("pv_estimate") or it.get("pv_estimate_kw") or it.get("value") or it.get("pv_estimate_w")
-                if val is None or pe is None:
-                    continue
+        # 1) explicit hourly lists
+        for key in ("yesterday_hourly", "today_hourly", "today_hourly_consumption", "yesterday_hourly_consumption"):
+            arr = attrs.get(key)
+            if isinstance(arr, list) and len(arr) >= 24:
+                # if values in W -> convert to kW heuristically
                 try:
-                    hour = None
-                    if isinstance(pe, str):
-                        try:
-                            hour = datetime.fromisoformat(pe).hour
-                        except Exception:
-                            if len(pe) >= 13:
-                                hour = int(pe[11:13])
-                    if hour is None:
-                        continue
-                    v = float(val)
-                    if isinstance(it.get("pv_estimate_w"), (int, float)) or ("pv_estimate_w" in it):
-                        v = v / 1000.0
-                    elif v > 1000:
-                        v = v / 1000.0
-                    result_hour[hour] += v
-                    cnt[hour] += 1
+                    sample = float(arr[0]) if arr else 0.0
+                    factor = 1000.0 if abs(sample) > 1000 else 1.0
+                    return [round(float(x) / factor, 3) for x in arr[:24]]
                 except Exception:
                     continue
-            out = []
-            for h in range(24):
-                if cnt[h] > 0:
-                    out.append(round(result_hour[h] / cnt[h], 3))
-                else:
-                    out.append(0.0)
-            return out
 
-        # fallback: try parse state scalar as total kWh -> distribute evenly
-        try:
-            total = float(state.state)
-            per_hour = total / 24.0
-            return [round(per_hour, 3) for _ in range(24)]
-        except Exception:
-            _LOGGER.debug("Unable to parse forecast sensor %s attributes %s", state.entity_id, list(attrs.keys()))
-            return [0.0] * 24
-
-    def _parse_price_sensor(self, state) -> List[float]:
-        """Normalize price sensor to 24 hourly currency/kWh values.
-
-        Supports attributes tomorrow_hourly_prices / today_hourly_prices list or mapping timestamp->price.
-        """
-        attrs = state.attributes or {}
-        tomorrow = attrs.get("tomorrow_hourly_prices")
-        if isinstance(tomorrow, list) and len(tomorrow) >= 24:
-            return [round(float(x), 4) for x in tomorrow[:24]]
-
-        today = attrs.get("today_hourly_prices")
-        if isinstance(today, list) and len(today) >= 24:
-            return [round(float(x), 4) for x in today[:24]]
-
-        # mapping timestamp->price
-        for keyname in ("prices", "values", "prices_map", "price_map"):
-            mapping = attrs.get(keyname)
+        # 2) mapping timestamp->value (like forecast)
+        for mapkey in ("watts", "values", "consumption", "consumption_w"):
+            mapping = attrs.get(mapkey)
             if isinstance(mapping, dict) and mapping:
-                return self._aggregate_timeseries_map_to_hourly(mapping, value_in_watts=False, unit=state.attributes.get("unit_of_measurement", ""))
+                return self._aggregate_timeseries_map_to_hourly(mapping, value_in_watts=True)
 
-        # forecast list of dicts with period_end + price
-        items = attrs.get("forecast") or attrs.get("data") or None
-        if isinstance(items, list) and items:
-            result_hour = [0.0] * 24
-            cnt = [0] * 24
-            unit = state.attributes.get("unit_of_measurement", "")
-            for it in items:
-                if not isinstance(it, dict):
-                    continue
-                pe = it.get("period_end") or it.get("datetime") or it.get("time")
-                val = it.get("price") or it.get("value")
-                if val is None or pe is None:
-                    continue
+        # 3) JSON array in state
+        try:
+            s = state.state
+            if isinstance(s, str) and s.startswith("[") and s.endswith("]"):
+                import json
+                arr = json.loads(s)
+                if isinstance(arr, list) and len(arr) >= 24:
+                    sample = float(arr[0]) if arr else 0.0
+                    factor = 1000.0 if abs(sample) > 1000 else 1.0
+                    return [round(float(x) / factor, 3) for x in arr[:24]]
+        except Exception:
+            pass
+
+        # 4) detect daily cumulative sensor (resets at midnight)
+        # heuristics: presence of 'last_reset' attribute, device_class 'energy', or explicit entity name
+        last_reset = attrs.get("last_reset")
+        device_class = attrs.get("device_class") or ""
+        is_daily_cumulative = False
+        if last_reset:
+            is_daily_cumulative = True
+        if isinstance(device_class, str) and "energy" in device_class:
+            is_daily_cumulative = True
+        if entity_id and entity_id.endswith("denni_spotreba_domu"):
+            is_daily_cumulative = True
+
+        if is_daily_cumulative:
+            # If sensor provides yesterday_hourly attribute, use it
+            yesterday = attrs.get("yesterday_hourly") or attrs.get("yesterday")
+            if isinstance(yesterday, list) and len(yesterday) >= 24:
                 try:
-                    hour = None
-                    if isinstance(pe, str):
-                        try:
-                            hour = datetime.fromisoformat(pe).hour
-                        except Exception:
-                            if len(pe) >= 13:
-                                hour = int(pe[11:13])
-                    if hour is None:
-                        continue
-                    v = float(val)
-                    if unit and ("MWh" in unit or "/MWh" in unit):
-                        v = v / 1000.0
-                    result_hour[hour] += v
-                    cnt[hour] += 1
+                    sample = float(yesterday[0]) if yesterday else 0.0
+                    factor = 1000.0 if abs(sample) > 1000 else 1.0
+                    return [round(float(x) / factor, 3) for x in yesterday[:24]]
                 except Exception:
-                    continue
-            out = []
-            for h in range(24):
-                if cnt[h] > 0:
-                    out.append(round(result_hour[h] / cnt[h], 4))
-                else:
-                    out.append(0.0)
-            return out
+                    pass
 
-        _LOGGER.debug("Unable to parse price sensor %s attributes %s unit=%s", state.entity_id, list(attrs.keys()), state.attributes.get("unit_of_measurement"))
-        return [0.0] * 24
+            # Otherwise try to estimate hourly consumption from cumulative value up to now.
+            try:
+                now = datetime.now()
+                current_val = float(state.state)
+                # if likely in Wh (large) -> convert to kWh
+                if current_val > 1000:
+                    # assume value is Wh -> convert
+                    current_val = current_val / 1000.0
+                # determine hours passed today (e.g., at 14:35 -> 14 hours completed)
+                hours_passed = now.hour  # hours fully started since midnight (0..23)
+                if hours_passed <= 0:
+                    # early in day: nothing yet -> return zeros
+                    return [0.0] * 24
+                # distribute evenly across past hours as initial estimate
+                per_hour = current_val / max(1, hours_passed)
+                hourly = [0.0] * 24
+                for h in range(hours_passed):
+                    hourly[h] = round(per_hour, 3)
+                # for future hours try to use yesterday profile if available, else leave zeros
+                # if yesterday_hourly exists, use its slice for future hours
+                if isinstance(yesterday, list) and len(yesterday) >= 24:
+                    for h in range(hours_passed, 24):
+                        try:
+                            val = float(yesterday[h])
+                            factor = 1000.0 if abs(val) > 1000 else 1.0
+                            hourly[h] = round(float(val) / factor, 3)
+                        except Exception:
+                            hourly[h] = 0.0
+                # store last cumulative for incremental updates while coordinator runs
+                today_date = datetime.now().date()
+                if self._last_daily_date != today_date:
+                    self._last_daily_date = today_date
+                    self._last_daily_cumulative = current_val
+                else:
+                    # if we have previous cumulative, compute delta since last run and add to current hour bucket
+                    if self._last_daily_cumulative is not None and current_val >= self._last_daily_cumulative:
+                        delta = current_val - self._last_daily_cumulative
+                        # add delta to current hour
+                        hourly[now.hour] = round(hourly[now.hour] + delta, 3)
+                        self._last_daily_cumulative = current_val
+                return hourly
+            except Exception:
+                _LOGGER.debug("Failed to estimate hourly from cumulative daily sensor %s", entity_id)
+
+        # 5) fallback: if state is numeric current power, assume flat profile
+        try:
+            val = float(state.state)
+            if abs(val) > 1000:
+                val = val / 1000.0
+            return [round(val, 3) for _ in range(24)]
+        except Exception:
+            _LOGGER.debug("Unable to parse load sensor %s attributes %s", state.entity_id, list(attrs.keys()))
+            return [0.0] * 24
 
     def _aggregate_timeseries_map_to_hourly(self, mapping: Dict[str, Any], value_in_watts: bool = False, unit: str = "") -> List[float]:
         """Aggregate a mapping timestamp->value (e.g. 15min slots) into 24 hourly values."""
@@ -234,22 +244,16 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         out = []
         for h in range(24):
             if counts[h] > 0:
-                out.append(round(sums[h] / counts[h], 4 if not value_in_watts else 3))
+                out.append(round(sums[h] / counts[h], 3))
             else:
                 out.append(0.0)
         return out
 
-    def _compute_schedule(self, forecast: List[float], prices: List[float]) -> List[Dict[str, Any]]:
-        """Compute a simple hourly plan.
+    def _compute_schedule(self, forecast: List[float], prices: List[float], loads: List[float]) -> List[Dict[str, Any]]:
+        """Compute a simple hourly plan that includes house load.
 
         Returns list[24] with dicts:
-        { hour, mode, pv_power_kW, price, planned_power_kW, soc_kwh_end, soc_pct_end }
-
-        Strategy:
-        - Prioritize PV when available (use PV up to max_charge_power).
-        - When PV absent, charge from grid during cheap hours (<= 25th percentile) if battery not full.
-        - Otherwise, if SOC > min_reserve -> mark as 'battery' (implying discharge use).
-        - Else 'idle'.
+        { hour, mode, pv_power_kW, load_kW, net_pv_kW, price_czk_kwh, planned_power_kW, soc_kwh_end, soc_pct_end }
         """
         # Read config params
         capacity = float(self.config.get(CONF_BATTERY_CAPACITY, 17.0))  # kWh
@@ -265,7 +269,6 @@ class GWSmartCoordinator(DataUpdateCoordinator):
             if st:
                 try:
                     val = float(st.state)
-                    # if value looks like percent (0-100) convert to fraction
                     if val > 1.0:
                         initial_soc_frac = max(0.0, min(1.0, val / 100.0))
                     else:
@@ -288,44 +291,46 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         for h in range(24):
             pv = float(forecast[h]) if h < len(forecast) else 0.0
             price = float(prices[h]) if h < len(prices) else 0.0
+            load = float(loads[h]) if h < len(loads) else 0.0
+
+            # net PV available for charging after household consumption
+            net_pv = pv - load  # kW (positive = surplus, negative = deficit)
 
             mode = "idle"
-            planned_power = 0.0  # positive = charge into battery (kW), negative = discharge (kW)
-            # If PV available - charge from PV (cap at max_charge)
-            if pv > 0.05:  # small threshold
-                charge_power = min(pv, max_charge)
-                # limit to capacity remaining
+            planned_power = 0.0  # positive = charge into battery, negative = discharge to supply home/grid
+            # Use surplus PV first for charging (self-consumption)
+            if net_pv > 0.05:
+                # can use net_pv up to max_charge to charge battery
+                charge_power = min(net_pv, max_charge)
+                # limit to capacity remaining (kWh)
                 capacity_left_kwh = capacity - soc_kwh
                 max_possible_charge = capacity_left_kwh  # over 1 hour
                 charge_power = min(charge_power, max_possible_charge)
-                # apply efficiency: energy stored = charge_power * eff * 1h
                 stored_kwh = charge_power * eff
                 soc_kwh += stored_kwh
                 planned_power = charge_power
                 mode = "pv"
             else:
-                # no PV; consider grid charging if cheap and space in battery
-                capacity_left_kwh = capacity - soc_kwh
-                if price_threshold > 0 and price > 0 and price <= price_threshold and capacity_left_kwh > 0.01:
-                    charge_power = min(max_charge, capacity_left_kwh)
-                    stored_kwh = charge_power * eff
-                    soc_kwh += stored_kwh
-                    planned_power = charge_power
-                    mode = "grid"
+                # no surplus PV: consider discharging to cover home load (to avoid grid import)
+                capacity_above_reserve = soc_kwh - min_reserve_kwh
+                if capacity_above_reserve > 0.1:
+                    discharge_power = min(max_charge, load, capacity_above_reserve)
+                    soc_kwh -= discharge_power / eff
+                    planned_power = -discharge_power
+                    mode = "battery"
                 else:
-                    # consider using battery if above reserve
-                    if soc_kwh > min_reserve_kwh + 0.1:
-                        # plan to discharge (represent as negative planned_power)
-                        discharge_power = min(max_charge, soc_kwh - min_reserve_kwh)
-                        # withdraw energy for 1h
-                        soc_kwh -= discharge_power / eff  # account for inefficiency on discharge
-                        planned_power = -discharge_power
-                        mode = "battery"
+                    # If price is cheap and battery has space, charge from grid
+                    capacity_left_kwh = capacity - soc_kwh
+                    if price_threshold > 0 and price > 0 and price <= price_threshold and capacity_left_kwh > 0.01:
+                        charge_power = min(max_charge, capacity_left_kwh)
+                        stored_kwh = charge_power * eff
+                        soc_kwh += stored_kwh
+                        planned_power = charge_power
+                        mode = "grid"
                     else:
                         mode = "idle"
                         planned_power = 0.0
 
-            # clamp soc_kwh between 0 and capacity
             soc_kwh = max(0.0, min(capacity, soc_kwh))
             soc_pct = round((soc_kwh / capacity) * 100.0, 2)
 
@@ -333,6 +338,8 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                 "hour": h,
                 "mode": mode,
                 "pv_power_kW": round(pv, 3),
+                "load_kW": round(load, 3),
+                "net_pv_kW": round(net_pv, 3),
                 "price_czk_kwh": round(price, 4),
                 "planned_power_kW": round(planned_power, 3),
                 "soc_kwh_end": round(soc_kwh, 3),
