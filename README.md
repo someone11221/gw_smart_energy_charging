@@ -31,7 +31,8 @@ Integrace podporuje následující senzory:
 - `sensor.battery_power` - Real-time nabíjecí/vybíjecí výkon
 - `sensor.energy_buy` - Grid import monitoring
 - `sensor.battery_state_of_charge` - SOC baterie (%)
-- `switch.nabijeni_ze_site` - Switch pro ovládání nabíjení
+- `script.nabijeni_on` - Script pro zapnutí nabíjení
+- `script.nabijeni_off` - Script pro vypnutí nabíjení
 
 Parametry včetně cenových prahů, SOC limitů, hystereze a critical hours lze nastavit přes UI.
 

@@ -13,7 +13,8 @@ from .const import (
     CONF_LOAD_SENSOR,
     CONF_DAILY_LOAD_SENSOR,
     CONF_PV_POWER_SENSOR,
-    CONF_GOODWE_SWITCH,
+    CONF_CHARGING_ON_SCRIPT,
+    CONF_CHARGING_OFF_SCRIPT,
     CONF_SOC_SENSOR,
     CONF_BATTERY_POWER_SENSOR,
     CONF_GRID_IMPORT_SENSOR,
@@ -71,7 +72,8 @@ class GWSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_PV_POWER_SENSOR, default=""): str,
                 vol.Optional(CONF_BATTERY_POWER_SENSOR, default="sensor.battery_power"): str,
                 vol.Optional(CONF_GRID_IMPORT_SENSOR, default="sensor.energy_buy"): str,
-                vol.Optional(CONF_GOODWE_SWITCH, default="switch.nabijeni_ze_site"): str,
+                vol.Optional(CONF_CHARGING_ON_SCRIPT, default="script.nabijeni_on"): str,
+                vol.Optional(CONF_CHARGING_OFF_SCRIPT, default="script.nabijeni_off"): str,
                 vol.Optional(CONF_SOC_SENSOR, default="sensor.battery_state_of_charge"): str,
                 vol.Optional(CONF_BATTERY_CAPACITY, default=DEFAULT_BATTERY_CAPACITY): vol.Coerce(float),
                 vol.Optional(CONF_MAX_CHARGE_POWER, default=DEFAULT_MAX_CHARGE_POWER): vol.Coerce(float),
@@ -155,8 +157,12 @@ class GWSmartOptionsFlow(config_entries.OptionsFlow):
                     default=current_config.get(CONF_GRID_IMPORT_SENSOR, "sensor.energy_buy")
                 ): str,
                 vol.Optional(
-                    CONF_GOODWE_SWITCH, 
-                    default=current_config.get(CONF_GOODWE_SWITCH, "switch.nabijeni_ze_site")
+                    CONF_CHARGING_ON_SCRIPT, 
+                    default=current_config.get(CONF_CHARGING_ON_SCRIPT, "script.nabijeni_on")
+                ): str,
+                vol.Optional(
+                    CONF_CHARGING_OFF_SCRIPT, 
+                    default=current_config.get(CONF_CHARGING_OFF_SCRIPT, "script.nabijeni_off")
                 ): str,
                 vol.Optional(
                     CONF_SOC_SENSOR, 

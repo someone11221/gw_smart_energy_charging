@@ -56,9 +56,8 @@ Integration vytváří následující senzory:
 - **battery_power_sensor**: sensor.battery_power (real-time battery charge/discharge power)
 - **grid_import_sensor**: sensor.energy_buy (grid import monitoring)
 - **soc_sensor**: sensor.battery_state_of_charge (battery SOC %)
-- **goodwe_switch**: switch.nabijeni_ze_site (charging control)
-- **soc_sensor**: sensor.battery_state_of_charge (battery SOC %)
-- **goodwe_switch**: switch.nabijeni_ze_site (charging control)
+- **charging_on_script**: script.nabijeni_on (script to turn on charging)
+- **charging_off_script**: script.nabijeni_off (script to turn off charging)
 
 ### Parametry baterie
 - **battery_capacity_kwh**: Kapacita baterie (kWh) - výchozí 17
