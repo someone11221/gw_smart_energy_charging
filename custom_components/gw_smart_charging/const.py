@@ -7,6 +7,8 @@ DEFAULT_NAME = "GW Smart Charging Forecast"
 
 CONF_FORECAST_SENSOR = "forecast_sensor"
 CONF_PRICE_SENSOR = "price_sensor"
+# load_sensor: může být hourly consumption sensor nebo denní kumulativní sensor (reset v noci)
+CONF_LOAD_SENSOR = "load_sensor"
 CONF_GOODWE_SWITCH = "goodwe_switch"
 CONF_PV_POWER_SENSOR = "pv_power_sensor"
 CONF_SOC_SENSOR = "soc_sensor"
