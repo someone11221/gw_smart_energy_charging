@@ -1,4 +1,4 @@
-# Updated coordinator: adds ISO timestamps for target day and a simple forecast confidence metric.
+# GW Smart Charging Coordinator - 15-minute interval optimization logic
 
 from __future__ import annotations
 
@@ -15,11 +15,24 @@ from .const import (
     CONF_FORECAST_SENSOR,
     CONF_PRICE_SENSOR,
     CONF_LOAD_SENSOR,
+    CONF_DAILY_LOAD_SENSOR,
     CONF_SOC_SENSOR,
     CONF_BATTERY_CAPACITY,
     CONF_MAX_CHARGE_POWER,
     CONF_CHARGE_EFFICIENCY,
-    CONF_MIN_RESERVE,
+    CONF_MIN_SOC,
+    CONF_MAX_SOC,
+    CONF_TARGET_SOC,
+    CONF_ALWAYS_CHARGE_PRICE,
+    CONF_NEVER_CHARGE_PRICE,
+    DEFAULT_BATTERY_CAPACITY,
+    DEFAULT_MAX_CHARGE_POWER,
+    DEFAULT_CHARGE_EFFICIENCY,
+    DEFAULT_MIN_SOC,
+    DEFAULT_MAX_SOC,
+    DEFAULT_TARGET_SOC,
+    DEFAULT_ALWAYS_CHARGE_PRICE,
+    DEFAULT_NEVER_CHARGE_PRICE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,74 +55,193 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         self._last_daily_date: Optional[date] = None
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch and normalize forecast, price and load data and compute schedule."""
+        """Fetch and normalize forecast, price and load data and compute 15-min schedule."""
         try:
             forecast_sensor = self.config.get(CONF_FORECAST_SENSOR)
             price_sensor = self.config.get(CONF_PRICE_SENSOR)
             load_sensor = self.config.get(CONF_LOAD_SENSOR)
+            daily_load_sensor = self.config.get(CONF_DAILY_LOAD_SENSOR)
 
-            forecast_hourly: List[float] = [0.0] * 24
-            price_hourly: List[float] = [0.0] * 24
-            load_hourly: List[float] = [0.0] * 24
+            # Use 96 slots for 15-minute intervals (24 hours * 4)
+            forecast_15min: List[float] = [0.0] * 96
+            price_15min: List[float] = [0.0] * 96
+            load_15min: List[float] = [0.0] * 96
 
             forecast_meta = {}
             forecast_timestamps: List[str] = []
 
-            # Parse forecast
+            # Parse forecast (supports 15-min data from sensor.energy_production_d2)
             if forecast_sensor:
                 state = self.hass.states.get(forecast_sensor)
                 if state:
-                    _LOGGER.debug("Parsing forecast from %s (state=%s)", forecast_sensor, state.state)
-                    forecast_hourly = self._parse_forecast_sensor(state)
-                    # build timestamps for the target day and confidence metadata
-                    forecast_timestamps = self._build_forecast_timestamps(forecast_sensor, state, forecast_hourly)
-                    conf_score, conf_reason, source, slots = self._compute_forecast_confidence(state, forecast_hourly)
+                    _LOGGER.debug("Parsing forecast from %s", forecast_sensor)
+                    forecast_15min = self._parse_forecast_15min(state)
+                    forecast_timestamps = self._build_forecast_timestamps_15min(state)
+                    conf_score, conf_reason, source, slots = self._compute_forecast_confidence(state)
                     forecast_meta = {
                         "forecast_confidence": {"score": conf_score, "reason": conf_reason},
                         "forecast_source": source,
                         "forecast_slots_count": slots,
                     }
-                    _LOGGER.debug("Forecast meta: %s", forecast_meta)
                 else:
                     _LOGGER.debug("Forecast sensor %s not found", forecast_sensor)
 
-            # Parse price
+            # Parse price (from sensor.current_consumption_price_czk_kwh with today/tomorrow hourly)
             if price_sensor:
                 state = self.hass.states.get(price_sensor)
                 if state:
-                    _LOGGER.debug("Parsing prices from %s (state=%s)", price_sensor, state.state)
-                    price_hourly = self._parse_price_sensor(state)
+                    _LOGGER.debug("Parsing prices from %s", price_sensor)
+                    price_15min = self._parse_price_15min(state)
                 else:
                     _LOGGER.debug("Price sensor %s not found", price_sensor)
 
-            # Parse load (supports hourly sensors, mapping, or daily cumulative that resets at midnight)
-            if load_sensor:
+            # Parse load - use daily sensor for historical pattern if available
+            if daily_load_sensor:
+                state_daily = self.hass.states.get(daily_load_sensor)
+                if state_daily:
+                    _LOGGER.debug("Parsing daily load pattern from %s", daily_load_sensor)
+                    load_15min = self._parse_daily_load_pattern_15min(state_daily)
+            
+            # Fallback to current consumption sensor
+            if not any(load_15min) and load_sensor:
                 state = self.hass.states.get(load_sensor)
                 if state:
-                    _LOGGER.debug("Parsing load from %s (state=%s)", load_sensor, state.state)
-                    load_hourly = self._parse_load_sensor(state, load_sensor)
-                    _LOGGER.debug("Aggregated hourly load: %s", load_hourly)
-                else:
-                    _LOGGER.debug("Load sensor %s not found", load_sensor)
+                    _LOGGER.debug("Using current load from %s", load_sensor)
+                    load_15min = self._parse_current_load_15min(state)
 
-            # Compute schedule (incorporates load)
-            schedule = self._compute_schedule(forecast_hourly, price_hourly, load_hourly)
+            # Compute 15-min optimized schedule
+            schedule = self._compute_schedule_15min(forecast_15min, price_15min, load_15min)
 
             return {
                 "status": "ok",
-                "forecast_hourly": forecast_hourly,
-                "price_hourly": price_hourly,
-                "load_hourly": load_hourly,
+                "forecast_15min": forecast_15min,
+                "price_15min": price_15min,
+                "load_15min": load_15min,
                 "schedule": schedule,
                 "timestamps": forecast_timestamps,
                 **forecast_meta,
                 "last_update": datetime.now(timezone.utc).isoformat(),
             }
         except Exception as err:
+            _LOGGER.error("Update failed: %s", err, exc_info=True)
             raise UpdateFailed(err) from err
 
-    # ---------- NEW: timestamps builder ----------
-    def _build_forecast_timestamps(self, forecast_entity_id: Optional[str], state, forecast_hourly: List[float]) -> List[str]:
+    # ---------- NEW: 15-minute interval parsing methods ----------
+    
+    def _parse_forecast_15min(self, state) -> List[float]:
+        """Parse solar forecast from sensor.energy_production_d2 with 15-min watts attribute."""
+        attrs = state.attributes or {}
+        watts = attrs.get("watts")
+        
+        if isinstance(watts, dict) and watts:
+            # Sort by timestamp and convert to 15-min intervals (W to kW)
+            slots = [0.0] * 96
+            for ts_str, w_value in watts.items():
+                try:
+                    ts = datetime.fromisoformat(ts_str)
+                    # Calculate 15-min slot index (0-95)
+                    hour = ts.hour
+                    minute = ts.minute
+                    slot_idx = hour * 4 + minute // 15
+                    if 0 <= slot_idx < 96:
+                        slots[slot_idx] = float(w_value) / 1000.0  # W to kW
+                except Exception as e:
+                    _LOGGER.debug("Failed to parse forecast timestamp %s: %s", ts_str, e)
+                    continue
+            return slots
+        
+        # Fallback: use hourly wh_period and distribute evenly
+        wh_period = attrs.get("wh_period")
+        if isinstance(wh_period, dict) and wh_period:
+            slots = [0.0] * 96
+            for ts_str, wh_value in wh_period.items():
+                try:
+                    ts = datetime.fromisoformat(ts_str)
+                    hour = ts.hour
+                    kw_avg = float(wh_value) / 1000.0  # Wh to kWh, then average over hour
+                    # Fill 4 slots for this hour
+                    for i in range(4):
+                        slot_idx = hour * 4 + i
+                        if 0 <= slot_idx < 96:
+                            slots[slot_idx] = kw_avg
+                except Exception:
+                    continue
+            return slots
+        
+        return [0.0] * 96
+    
+    def _parse_price_15min(self, state) -> List[float]:
+        """Parse electricity price from sensor with today/tomorrow_hourly_prices, expand to 15-min."""
+        attrs = state.attributes or {}
+        
+        # Get tomorrow prices (for planning ahead) or fallback to today
+        prices_hourly = attrs.get("tomorrow_hourly_prices")
+        if not prices_hourly or len(prices_hourly) < 24:
+            prices_hourly = attrs.get("today_hourly_prices")
+        
+        if isinstance(prices_hourly, list) and len(prices_hourly) >= 24:
+            # Expand hourly prices to 15-min slots (each hour gets 4 identical price slots)
+            slots = []
+            for price in prices_hourly[:24]:
+                for _ in range(4):
+                    slots.append(float(price))
+            return slots[:96]
+        
+        return [0.0] * 96
+    
+    def _parse_daily_load_pattern_15min(self, state) -> List[float]:
+        """Parse historical daily load pattern from sensor.house_consumption_daily."""
+        # This would ideally use historical data to predict tomorrow's consumption pattern
+        # For now, use a simplified approach - could be enhanced with HA history
+        attrs = state.attributes or {}
+        
+        # If we had yesterday's hourly data, we could use it
+        # For now, return flat profile - this should be enhanced
+        try:
+            # Get total daily consumption and distribute based on typical pattern
+            total_kwh = float(state.state)
+            # Simple pattern: higher during day (6-22), lower at night
+            pattern = []
+            for hour in range(24):
+                if 6 <= hour < 22:
+                    factor = 1.2  # 20% above average during day
+                else:
+                    factor = 0.5  # 50% of average at night
+                hour_kwh = (total_kwh / 24) * factor
+                # Split into 4x 15-min slots
+                for _ in range(4):
+                    pattern.append(hour_kwh / 4)
+            return pattern[:96]
+        except Exception:
+            return [0.0] * 96
+    
+    def _parse_current_load_15min(self, state) -> List[float]:
+        """Parse current load from sensor.house_consumption (in W) and create flat 15-min profile."""
+        try:
+            current_w = float(state.state)
+            current_kw = current_w / 1000.0
+            # Use current value as flat forecast for all slots
+            return [current_kw] * 96
+        except Exception:
+            return [0.0] * 96
+    
+    def _build_forecast_timestamps_15min(self, state) -> List[str]:
+        """Build list of 96 ISO timestamps for 15-min intervals (for day after tomorrow if _d2 sensor)."""
+        use_day_after_tomorrow = "_d2" in (state.entity_id or "")
+        base_date = datetime.now().date()
+        if use_day_after_tomorrow:
+            base_date += timedelta(days=2)
+        else:
+            base_date += timedelta(days=1)
+        
+        timestamps = []
+        for hour in range(24):
+            for minute in [0, 15, 30, 45]:
+                dt_obj = datetime.combine(base_date, dt_time(hour=hour, minute=minute))
+                timestamps.append(dt_obj.isoformat())
+        return timestamps
+
+    # ---------- OLD: hourly timestamps builder (keep for compatibility) ----------
         """Build list of 24 ISO timestamps for the forecast day (prefer tomorrow if sensor indicates it)."""
         # Determine whether forecast is for tomorrow:
         try:
@@ -476,6 +608,154 @@ class GWSmartCoordinator(DataUpdateCoordinator):
             else:
                 out.append(0.0)
         return out
+
+    def _compute_schedule_15min(self, forecast: List[float], prices: List[float], loads: List[float]) -> List[Dict[str, Any]]:
+        """Compute optimized 15-min charging schedule based on forecast, prices, and load.
+        
+        Returns list[96] with dicts for each 15-min slot:
+        { slot, time, mode, pv_power_kW, load_kW, net_pv_kW, price_czk_kwh, 
+          planned_charge_kW, soc_kwh_end, soc_pct_end, should_charge }
+        
+        Logic:
+        1. Always use solar energy first (self-consumption priority)
+        2. Charge from grid only when price is below threshold AND battery needs charging
+        3. Never charge if price above never_charge_price threshold
+        4. Always charge if price below always_charge_price AND battery below target
+        5. Respect min/max SOC limits
+        6. Consider solar forecast to avoid charging from grid if solar will cover needs
+        """
+        # Read config params
+        capacity = float(self.config.get(CONF_BATTERY_CAPACITY, DEFAULT_BATTERY_CAPACITY))
+        max_charge = float(self.config.get(CONF_MAX_CHARGE_POWER, DEFAULT_MAX_CHARGE_POWER))
+        eff = float(self.config.get(CONF_CHARGE_EFFICIENCY, DEFAULT_CHARGE_EFFICIENCY))
+        
+        min_soc_pct = float(self.config.get(CONF_MIN_SOC, DEFAULT_MIN_SOC))
+        max_soc_pct = float(self.config.get(CONF_MAX_SOC, DEFAULT_MAX_SOC))
+        target_soc_pct = float(self.config.get(CONF_TARGET_SOC, DEFAULT_TARGET_SOC))
+        
+        always_charge_price = float(self.config.get(CONF_ALWAYS_CHARGE_PRICE, DEFAULT_ALWAYS_CHARGE_PRICE))
+        never_charge_price = float(self.config.get(CONF_NEVER_CHARGE_PRICE, DEFAULT_NEVER_CHARGE_PRICE))
+
+        # Get initial SOC
+        initial_soc_frac = 0.5  # default 50%
+        soc_sensor = self.config.get(CONF_SOC_SENSOR)
+        if soc_sensor:
+            st = self.hass.states.get(soc_sensor)
+            if st:
+                try:
+                    val = float(st.state)
+                    initial_soc_frac = max(0.0, min(1.0, val / 100.0))
+                except Exception:
+                    pass
+
+        soc_kwh = capacity * initial_soc_frac
+        min_soc_kwh = capacity * (min_soc_pct / 100.0)
+        max_soc_kwh = capacity * (max_soc_pct / 100.0)
+        target_soc_kwh = capacity * (target_soc_pct / 100.0)
+
+        schedule: List[Dict[str, Any]] = []
+        
+        # First pass: identify cheap charging opportunities and solar surplus
+        for slot in range(96):
+            pv_kw = float(forecast[slot]) if slot < len(forecast) else 0.0
+            price = float(prices[slot]) if slot < len(prices) else 0.0
+            load_kw = float(loads[slot]) if slot < len(loads) else 0.0
+            
+            # 15-min interval = 0.25 hours
+            interval_hours = 0.25
+            
+            # Net solar after house consumption
+            net_pv_kw = pv_kw - load_kw
+            
+            mode = "idle"
+            planned_charge_kw = 0.0
+            should_charge = False
+            
+            # Priority 1: Use surplus solar for charging
+            if net_pv_kw > 0.05:
+                # Can charge from solar surplus
+                available_charge_kw = min(net_pv_kw, max_charge)
+                capacity_left_kwh = max_soc_kwh - soc_kwh
+                max_charge_this_slot_kwh = available_charge_kw * interval_hours
+                
+                if capacity_left_kwh > 0.01:
+                    charge_kwh = min(max_charge_this_slot_kwh, capacity_left_kwh)
+                    stored_kwh = charge_kwh * eff
+                    soc_kwh += stored_kwh
+                    planned_charge_kw = charge_kwh / interval_hours
+                    mode = "solar_charge"
+                    should_charge = False  # No grid charging needed
+            
+            # Priority 2: Discharge to cover load (battery -> house)
+            elif load_kw > pv_kw and soc_kwh > min_soc_kwh:
+                deficit_kw = load_kw - pv_kw
+                available_discharge_kwh = soc_kwh - min_soc_kwh
+                max_discharge_this_slot_kw = min(deficit_kw, max_charge)
+                discharge_kwh = min(max_discharge_this_slot_kw * interval_hours, available_discharge_kwh)
+                
+                soc_kwh -= discharge_kwh / eff
+                planned_charge_kw = -(discharge_kwh / interval_hours)  # Negative = discharge
+                mode = "battery_discharge"
+                should_charge = False
+            
+            # Priority 3: Grid charging based on price thresholds
+            if soc_kwh < target_soc_kwh:
+                # Check price conditions
+                if price > 0:
+                    if price <= always_charge_price:
+                        # Very cheap - always charge
+                        capacity_left_kwh = max_soc_kwh - soc_kwh
+                        if capacity_left_kwh > 0.01:
+                            charge_kw = min(max_charge, capacity_left_kwh / interval_hours)
+                            charge_kwh = charge_kw * interval_hours
+                            stored_kwh = charge_kwh * eff
+                            soc_kwh += stored_kwh
+                            planned_charge_kw = charge_kw
+                            mode = "grid_charge_cheap"
+                            should_charge = True
+                    
+                    elif price < never_charge_price:
+                        # Moderate price - consider charging if below target
+                        # Only charge if not expecting enough solar to reach target
+                        future_solar_kwh = sum(forecast[slot:]) * interval_hours
+                        future_load_kwh = sum(loads[slot:]) * interval_hours
+                        expected_net_solar = future_solar_kwh - future_load_kwh
+                        
+                        if (soc_kwh + expected_net_solar * eff) < target_soc_kwh:
+                            capacity_left_kwh = max_soc_kwh - soc_kwh
+                            if capacity_left_kwh > 0.01:
+                                charge_kw = min(max_charge, capacity_left_kwh / interval_hours)
+                                charge_kwh = charge_kw * interval_hours
+                                stored_kwh = charge_kwh * eff
+                                soc_kwh += stored_kwh
+                                planned_charge_kw = charge_kw
+                                mode = "grid_charge_optimal"
+                                should_charge = True
+            
+            # Ensure SOC stays within bounds
+            soc_kwh = max(min_soc_kwh, min(max_soc_kwh, soc_kwh))
+            soc_pct = (soc_kwh / capacity) * 100.0
+            
+            # Time calculation
+            hour = slot // 4
+            minute = (slot % 4) * 15
+            time_str = f"{hour:02d}:{minute:02d}"
+            
+            schedule.append({
+                "slot": slot,
+                "time": time_str,
+                "mode": mode,
+                "pv_power_kW": round(pv_kw, 3),
+                "load_kW": round(load_kw, 3),
+                "net_pv_kW": round(net_pv_kw, 3),
+                "price_czk_kwh": round(price, 4),
+                "planned_charge_kW": round(planned_charge_kw, 3),
+                "soc_kwh_end": round(soc_kwh, 3),
+                "soc_pct_end": round(soc_pct, 2),
+                "should_charge": should_charge,
+            })
+        
+        return schedule
 
     def _compute_schedule(self, forecast: List[float], prices: List[float], loads: List[float]) -> List[Dict[str, Any]]:
         """Compute a simple hourly plan that includes house load.
