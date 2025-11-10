@@ -1,8 +1,17 @@
 # GW Smart Charging
 
-Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 2.1.0** - Strategie nabíjení, vylepšená predikce cen, opravený dashboard.
+Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 2.2.0** - Nové strategie nabíjení, vícejazyčná podpora, interaktivní grafy, celohodinové nabíjecí cykly.
 
 ## Funkce
+
+### 🆕 Nové ve v2.2.0
+
+🌍 **Vícejazyčná podpora** - Přepínání mezi češtinou a angličtinou v celém rozhraní  
+📊 **Interaktivní grafy** - Tři dynamické Chart.js grafy: ceny, SOC predikce, solární výroba  
+🎯 **4 nové strategie** - Adaptivní chytrá, Priorita solární, Redukce špiček, TOU optimalizace  
+⏱️ **Celohodinové cykly** - Nabíjení v celých hodinách (4x 15min sloty) pro lepší stabilitu  
+🎨 **Vylepšený dashboard** - Živé grafy s překryvem plánovaného nabíjení  
+⚙️ **Rozšířená konfigurace** - Výběr jazyka a typu nabíjení přímo v UI  
 
 ### 🆕 Nové ve v2.1.0
 
@@ -264,6 +273,119 @@ Integrace se nyní zobrazuje v panelu Zařízení a Služby:
 - **RELEASE_NOTES_v1.8.0.md** - Detailní release notes s migrační příručkou
 
 ## Release Notes
+
+### v2.2.0 (Multi-Language, New Strategies & Charts - November 2024)
+
+#### 🌍 Vícejazyčná podpora
+
+**Kompletní podpora češtiny a angličtiny**
+- Přepínání jazyka v konfiguraci integrace
+- Přeložený dashboard a všechny UI elementy
+- Lokalizované popisky grafů
+- Automatické zapamatování preference
+
+**Jak použít:**
+- Nastavení → Zařízení a Služby → GW Smart Charging → KONFIGURACE
+- Vyberte jazyk: "cs" (Čeština) nebo "en" (English)
+
+#### 📊 Interaktivní grafy (Chart.js)
+
+**3 nové živé grafy na dashboardu:**
+
+1. **Graf cen a nabíjení**
+   - Vizualizace cen elektřiny přes 24 hodin
+   - Zelené značky ukazují plánované nabíjení
+   - Interaktivní hover pro detaily
+
+2. **Předpověď SOC**
+   - Predikce stavu baterie na 24 hodin dopředu
+   - Zobrazení 0-100% rozsahu
+   - Gradient výplň pro lepší čitelnost
+
+3. **Solární výroba**
+   - Sloupcový graf očekávané produkce
+   - Data v kWh pro každý 15min interval
+   - Pomáhá plánovat nabíjení kolem slunce
+
+**Výhody:**
+- Responzivní design (mobil i desktop)
+- Automatická aktualizace každých 15 minut
+- Možnost stahování grafů jako obrázky
+- Zoom a pan funkce
+
+#### 🎯 4 nové strategie nabíjení
+
+**6. Adaptivní chytrá**
+- Učí se ze vzorců minulé spotřeby
+- Kombinuje ML predikce s cenovou optimalizací
+- Prioritizuje nabíjení před vysokou spotřebou
+- Ideální pro uživatele s pravidelným režimem
+
+**7. Priorita solární**
+- Maximalizuje využití vlastní solární výroby
+- Nabíjí především když je vysoká předpověď FV
+- Minimální použití sítě
+- Perfektní pro maximalizaci self-consumption
+
+**8. Redukce špiček**
+- Vyhýbá se síti během špičkových hodin
+- Nabíjí v off-peak obdobích
+- Snižuje náklady na poptávkové poplatky
+- Konfiguruje se přes critical hours
+
+**9. TOU optimalizace**
+- Optimalizováno pro TOU tarify
+- Automaticky detekuje cenové úrovně
+- Nabíjí pouze v nejlevnější úrovni (40% rozsahu)
+- Ideální pro víceúrovňové tarify
+
+**Celkem 9 strategií:**
+Dynamická, 4/6 nejlevnějších, Nanogreen, Cenový práh, Adaptivní, Solární, Redukce špiček, TOU
+
+#### ⏱️ Celohodinové nabíjecí cykly
+
+**Nová funkce: Full Hour Charging**
+- Nabíjení v celých hodinových blocích
+- 4 po sobě jdoucí 15min sloty = 1 hodina
+- Lepší stabilita a ochrana baterie
+- Stále analyzuje ceny po 15 minutách
+
+**Výhody:**
+- Konstantní hodinové vzorce nabíjení
+- Méně přepínání nabíjení/vybíjení
+- Lepší řízení cyklů baterie
+- Konfigurovatelné (výchozí: zapnuto)
+
+**Příklad:**
+```
+Před v2.2.0: Sloty 10:15, 14:00, 18:30, 22:45
+Od v2.2.0:   Hodiny 22:00-23:00, 23:00-00:00, 01:00-02:00, 02:00-03:00
+```
+
+#### 📦 Aktualizace verzí
+
+- manifest.json → 2.2.0
+- Dashboard → 2.2.0 (hlavička i patička)
+- Konzistentní zobrazování ve všech komponentách
+
+#### 🔄 Migrace z v2.1.0
+
+**Plně zpětně kompatibilní** - žádné breaking changes
+- Všechny existující konfigurace fungují beze změny
+- Výchozí strategie zůstává dynamická
+- Výchozí jazyk: čeština
+- Celohodinové nabíjení: zapnuto
+- Není potřeba žádná ruční migrace
+
+**Volitelná vylepšení po upgradu:**
+1. Nastavit preferovaný jazyk
+2. Vyzkoušet nové strategie
+3. Prozkoumat nové grafy na dashboardu
+4. Upravit full-hour charging podle potřeby
+
+Více informací v `RELEASE_NOTES_v2.2.0.md`.
+
+---
 
 ### v2.1.0 (Dashboard & Strategy Update - November 2024)
 
