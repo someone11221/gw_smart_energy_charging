@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Dict
 from datetime import datetime
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.entity import DeviceInfo
 
 from .const import DOMAIN, DEFAULT_NAME
 from .coordinator import GWSmartCoordinator
@@ -15,66 +16,58 @@ from .coordinator import GWSmartCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 
+def get_device_info(entry: ConfigEntry) -> DeviceInfo:
+    """Return device info for the integration."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        name=DEFAULT_NAME,
+        manufacturer="GW Energy Solutions",
+        model="Smart Battery Charging Controller",
+        sw_version="1.8.0",
+        configuration_url="https://github.com/someone11221/gw_smart_energy_charging",
+    )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     """Set up sensors for the config entry."""
     coordinator: GWSmartCoordinator = hass.data[DOMAIN][entry.entry_id]
 
     entities = [
-        GWSmartStatusSensor(coordinator, entry.entry_id),
-        GWSmartForecastSensor(coordinator, entry.entry_id),
-        GWSmartPriceSensor(coordinator, entry.entry_id),
-        GWSmartScheduleSensor(coordinator, entry.entry_id),
-        GWSmartSOCSensor(coordinator, entry.entry_id),
-        GWSmartDiagnosticsSensor(coordinator, entry.entry_id),  # Diagnostics sensor
-        GWSmartBatteryPowerSensor(coordinator, entry.entry_id),  # Real-time battery power
-        GWSmartTodayChargeSensor(coordinator, entry.entry_id),  # Today's charge (kWh)
-        GWSmartTodayDischargeSensor(coordinator, entry.entry_id),  # Today's discharge (kWh)
-        # Daily statistics and predictions (v1.7.0)
-        GWSmartDailyStatisticsSensor(coordinator, entry.entry_id),  # Daily statistics
-        GWSmartPredictionSensor(coordinator, entry.entry_id),  # ML predictions and forecast
+        GWSmartForecastSensor(coordinator, entry),
+        GWSmartScheduleSensor(coordinator, entry),
+        GWSmartSOCSensor(coordinator, entry),
+        GWSmartDiagnosticsSensor(coordinator, entry),  # Diagnostics sensor
+        GWSmartBatteryPowerSensor(coordinator, entry),  # Real-time battery power
+        # Daily statistics and predictions (v1.8.0)
+        GWSmartDailyStatisticsSensor(coordinator, entry),  # Daily statistics
+        GWSmartPredictionSensor(coordinator, entry),  # ML predictions and forecast
         # Automation support sensors
-        GWSmartNextGridChargeSensor(coordinator, entry.entry_id),  # Next grid charging period
-        GWSmartNextBatteryDischargeSensor(coordinator, entry.entry_id),  # Next battery discharge period
-        GWSmartActivityLogSensor(coordinator, entry.entry_id),  # Activity log and state changes
-        # series sensors for Lovelace plotting (15-min resolution)
-        GWSmartSeriesSensor(coordinator, entry.entry_id, "pv"),
-        GWSmartSeriesSensor(coordinator, entry.entry_id, "load"),
-        GWSmartSeriesSensor(coordinator, entry.entry_id, "battery_charge"),
-        GWSmartSeriesSensor(coordinator, entry.entry_id, "battery_discharge"),
-        GWSmartSeriesSensor(coordinator, entry.entry_id, "grid_import"),
-        GWSmartSeriesSensor(coordinator, entry.entry_id, "soc_forecast"),
+        GWSmartNextGridChargeSensor(coordinator, entry),  # Next grid charging period
+        GWSmartActivityLogSensor(coordinator, entry),  # Activity log and state changes
     ]
 
     async_add_entities(entities, True)
 
 
-class GWSmartStatusSensor(CoordinatorEntity, SensorEntity):
-    """Sensor reporting integration status."""
+class GWSmartForecastSensor(CoordinatorEntity, SensorEntity):
+    """Sensor exposing solar forecast data with charging schedule information."""
 
-    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+    def __init__(self, coordinator: GWSmartCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
-        self._entry_id = entry_id
-        self._attr_name = f"{DEFAULT_NAME} Forecast Status"
-        self._attr_unique_id = f"{entry_id}_status"
+        self._entry = entry
+        self._attr_name = f"{DEFAULT_NAME} Forecast"
+        self._attr_unique_id = f"{entry.entry_id}_forecast"
+        self._attr_icon = "mdi:solar-power"
+        self._attr_unit_of_measurement = "kW"
 
     @property
-    def native_value(self) -> str:
-        data = self.coordinator.data or {}
-        return data.get("status", "unknown")
-
-
-class GWSmartForecastSensor(CoordinatorEntity, SensorEntity):
-    """Sensor exposing 15-min PV forecast (kW) plus planned schedule and timestamps."""
-
-    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
-        super().__init__(coordinator)
-        self._entry_id = entry_id
-        self._attr_name = f"{DEFAULT_NAME} Forecast"
-        self._attr_unique_id = f"{entry_id}_forecast"
+    def device_info(self) -> DeviceInfo:
+        """Return device info."""
+        return get_device_info(self._entry)
 
     @property
     def native_value(self) -> float:
-        """Return a simple numeric state (peak kW) for quick overview."""
+        """Return peak solar forecast for quick overview."""
         data = self.coordinator.data or {}
         forecast_15min: List[float] = data.get("forecast_15min") or []
         if not forecast_15min:
@@ -87,60 +80,50 @@ class GWSmartForecastSensor(CoordinatorEntity, SensorEntity):
         forecast_15min: List[float] = data.get("forecast_15min") or [0.0] * 96
         schedule: List[dict] = data.get("schedule") or []
         timestamps = data.get("timestamps") or []
+        
+        # Get current price (15-min slot)
+        now = datetime.now()
+        slot = now.hour * 4 + now.minute // 15
+        price_15min: List[float] = data.get("price_15min") or []
+        current_price = price_15min[slot] if 0 <= slot < len(price_15min) else 0.0
+        
         # forecast confidence and metadata
         forecast_conf = data.get("forecast_confidence") or {}
         forecast_source = data.get("forecast_source", "")
         forecast_slots = data.get("forecast_slots_count", 0)
+        
+        # Calculate totals
+        total_forecast_kwh = sum(f * 0.25 for f in forecast_15min)  # 15min = 0.25h
+        peak_forecast_kw = max(forecast_15min) if forecast_15min else 0.0
+        
         return {
             "forecast_15min": forecast_15min,
             "timestamps": timestamps,
             "schedule_15min": schedule,
+            "current_price_czk_kwh": round(current_price, 4),
+            "price_15min": data.get("price_15min", [0.0] * 96),
+            "total_forecast_kwh": round(total_forecast_kwh, 2),
+            "peak_forecast_kw": round(peak_forecast_kw, 3),
             "forecast_confidence": forecast_conf,
             "forecast_source": forecast_source,
             "forecast_slots_count": forecast_slots,
         }
 
 
-class GWSmartPriceSensor(CoordinatorEntity, SensorEntity):
-    """Sensor exposing 15-min prices. State = current 15-min slot price, attribute 'price_15min' = list[96]."""
-
-    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
-        super().__init__(coordinator)
-        self._entry_id = entry_id
-        self._attr_name = f"{DEFAULT_NAME} Price"
-        self._attr_unique_id = f"{entry_id}_price"
-        self._attr_unit_of_measurement = "CZK/kWh"
-
-    @property
-    def native_value(self) -> float:
-        """Return current 15-min slot price (CZK/kWh) if available."""
-        data = self.coordinator.data or {}
-        price_15min: List[float] = data.get("price_15min") or []
-        if not price_15min:
-            return 0.0
-        # Calculate current 15-min slot
-        now = datetime.now()
-        slot = now.hour * 4 + now.minute // 15
-        if 0 <= slot < len(price_15min):
-            return round(float(price_15min[slot]), 4)
-        return 0.0
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        data = self.coordinator.data or {}
-        price_15min: List[float] = data.get("price_15min") or [0.0] * 96
-        timestamps: List[str] = data.get("timestamps") or []
-        return {"price_15min": price_15min, "timestamps": timestamps}
-
-
 class GWSmartScheduleSensor(CoordinatorEntity, SensorEntity):
     """Sensor showing current charging plan and decision."""
 
-    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+    def __init__(self, coordinator: GWSmartCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
-        self._entry_id = entry_id
+        self._entry = entry
         self._attr_name = f"{DEFAULT_NAME} Schedule"
-        self._attr_unique_id = f"{entry_id}_schedule"
+        self._attr_unique_id = f"{entry.entry_id}_schedule"
+        self._attr_icon = "mdi:calendar-clock"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device info."""
+        return get_device_info(self._entry)
 
     @property
     def native_value(self) -> str:
@@ -168,6 +151,18 @@ class GWSmartScheduleSensor(CoordinatorEntity, SensorEntity):
         # Count charging slots in next 24h
         charging_slots = sum(1 for s in schedule if s.get("should_charge", False))
         
+        # Find next charging/discharging periods
+        next_charge_time = "none"
+        next_discharge_time = "none"
+        for i in range(slot + 1, len(schedule)):
+            s = schedule[i]
+            if next_charge_time == "none" and "grid_charge" in s.get("mode", ""):
+                next_charge_time = s.get("time", "unknown")
+            if next_discharge_time == "none" and s.get("mode") == "battery_discharge":
+                next_discharge_time = s.get("time", "unknown")
+            if next_charge_time != "none" and next_discharge_time != "none":
+                break
+        
         return {
             "full_schedule": schedule,
             "current_slot": current_slot,
@@ -175,18 +170,26 @@ class GWSmartScheduleSensor(CoordinatorEntity, SensorEntity):
             "current_mode": current_slot.get("mode", "unknown"),
             "should_charge_now": current_slot.get("should_charge", False),
             "current_price": current_slot.get("price_czk_kwh", 0.0),
+            "next_charge_time": next_charge_time,
+            "next_discharge_time": next_discharge_time,
         }
 
 
 class GWSmartSOCSensor(CoordinatorEntity, SensorEntity):
-    """Sensor showing forecasted battery SOC throughout the day."""
+    """Sensor showing forecasted battery SOC throughout the day with series data."""
 
-    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+    def __init__(self, coordinator: GWSmartCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
-        self._entry_id = entry_id
+        self._entry = entry
         self._attr_name = f"{DEFAULT_NAME} SOC Forecast"
-        self._attr_unique_id = f"{entry_id}_soc_forecast"
+        self._attr_unique_id = f"{entry.entry_id}_soc_forecast"
         self._attr_unit_of_measurement = "%"
+        self._attr_icon = "mdi:battery"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device info."""
+        return get_device_info(self._entry)
 
     @property
     def native_value(self) -> float:
@@ -215,29 +218,68 @@ class GWSmartSOCSensor(CoordinatorEntity, SensorEntity):
         min_soc = min(soc_forecast) if soc_forecast else 0.0
         max_soc = max(soc_forecast) if soc_forecast else 0.0
         
+        # Build series data for charting (same as old series sensors)
+        pv_series = [s.get("pv_power_kW", 0.0) for s in schedule]
+        load_series = [s.get("load_kW", 0.0) for s in schedule]
+        planned_charge = [s.get("planned_charge_kW", 0.0) for s in schedule]
+        battery_charge_series = [max(0.0, p) for p in planned_charge]
+        battery_discharge_series = [max(0.0, -p) for p in planned_charge]
+        
+        # Calculate grid import
+        grid_import_series = []
+        for i in range(len(schedule)):
+            pv = pv_series[i] if i < len(pv_series) else 0.0
+            load = load_series[i] if i < len(load_series) else 0.0
+            batt_charge = battery_charge_series[i] if i < len(battery_charge_series) else 0.0
+            batt_discharge = battery_discharge_series[i] if i < len(battery_discharge_series) else 0.0
+            
+            gi = max(0.0, load - pv)
+            if batt_discharge > 0:
+                gi = max(0.0, gi - batt_discharge)
+            if batt_charge > 0:
+                surplus = max(0.0, pv - load)
+                extra_charge_from_grid = max(0.0, batt_charge - surplus)
+                gi += extra_charge_from_grid
+            grid_import_series.append(round(gi, 3))
+        
         return {
             "soc_forecast_15min": soc_forecast,
             "timestamps": timestamps,
             "min_soc_pct": round(min_soc, 2),
             "max_soc_pct": round(max_soc, 2),
+            # Series data for charting (replaces old series sensors)
+            "pv_series_kw": pv_series,
+            "load_series_kw": load_series,
+            "battery_charge_series_kw": battery_charge_series,
+            "battery_discharge_series_kw": battery_discharge_series,
+            "grid_import_series_kw": grid_import_series,
         }
 
 
 class GWSmartDiagnosticsSensor(CoordinatorEntity, SensorEntity):
     """Sensor showing integration diagnostics and status information."""
 
-    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+    def __init__(self, coordinator: GWSmartCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
-        self._entry_id = entry_id
+        self._entry = entry
         self._attr_name = f"{DEFAULT_NAME} Diagnostics"
-        self._attr_unique_id = f"{entry_id}_diagnostics"
+        self._attr_unique_id = f"{entry.entry_id}_diagnostics"
         self._attr_icon = "mdi:information-outline"
 
     @property
+    def device_info(self) -> DeviceInfo:
+        """Return device info."""
+        return get_device_info(self._entry)
+
+    @property
     def native_value(self) -> str:
-        """Return integration status."""
+        """Return integration status with current SoC."""
         data = self.coordinator.data or {}
         status = data.get("status", "unknown")
+        
+        # Get actual current SoC from battery sensor
+        battery_metrics = data.get("battery_metrics", {})
+        current_soc = battery_metrics.get("soc_pct", 0.0)
         
         # Get current slot info
         schedule = data.get("schedule") or []
@@ -247,9 +289,9 @@ class GWSmartDiagnosticsSensor(CoordinatorEntity, SensorEntity):
             if 0 <= slot < len(schedule):
                 current_slot = schedule[slot]
                 mode = current_slot.get("mode", "unknown")
-                return f"{status} - {mode}"
+                return f"{status} - {mode} (SoC: {current_soc:.1f}%)"
         
-        return status
+        return f"{status} (SoC: {current_soc:.1f}%)"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -452,109 +494,71 @@ class GWSmartSeriesSensor(CoordinatorEntity, SensorEntity):
 
 
 class GWSmartBatteryPowerSensor(CoordinatorEntity, SensorEntity):
-    """Sensor showing current battery power (W, positive=discharging, negative=charging)."""
+    """Sensor showing current battery power and today's charge/discharge totals."""
 
-    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+    def __init__(self, coordinator: GWSmartCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
-        self._entry_id = entry_id
+        self._entry = entry
         self._attr_name = f"{DEFAULT_NAME} Battery Power"
-        self._attr_unique_id = f"{entry_id}_battery_power"
+        self._attr_unique_id = f"{entry.entry_id}_battery_power"
         self._attr_unit_of_measurement = "W"
         self._attr_device_class = "power"
         self._attr_state_class = "measurement"
+        self._attr_icon = "mdi:battery-charging"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device info."""
+        return get_device_info(self._entry)
 
     @property
     def native_value(self) -> float:
         """Return current battery power in watts."""
-        from .const import CONF_BATTERY_POWER_SENSOR
-        battery_power_sensor = self.coordinator.config.get(CONF_BATTERY_POWER_SENSOR)
-        if battery_power_sensor:
-            state = self.coordinator.hass.states.get(battery_power_sensor)
-            if state:
-                try:
-                    # Per requirements: positive when discharging, negative when charging
-                    return float(state.state)
-                except (ValueError, TypeError):
-                    return 0.0
-        return 0.0
+        data = self.coordinator.data or {}
+        battery_metrics = data.get("battery_metrics", {})
+        return battery_metrics.get("battery_power_w", 0.0)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return additional attributes."""
-        power_w = self.native_value
-        power_kw = power_w / 1000.0
-        status = "discharging" if power_w > 0 else "charging" if power_w < 0 else "idle"
+        """Return additional attributes including today's totals."""
+        data = self.coordinator.data or {}
+        battery_metrics = data.get("battery_metrics", {})
+        
+        power_w = battery_metrics.get("battery_power_w", 0.0)
+        power_kw = battery_metrics.get("battery_power_kw", 0.0)
+        status = battery_metrics.get("battery_status", "idle")
+        soc_pct = battery_metrics.get("soc_pct", 0.0)
+        soc_kwh = battery_metrics.get("soc_kwh", 0.0)
+        today_charge = battery_metrics.get("today_charge_kwh", 0.0)
+        today_discharge = battery_metrics.get("today_discharge_kwh", 0.0)
+        
         return {
             "power_kw": round(power_kw, 3),
             "status": status,
             "abs_power_w": abs(power_w),
             "abs_power_kw": round(abs(power_kw), 3),
+            "current_soc_pct": round(soc_pct, 1),
+            "current_soc_kwh": round(soc_kwh, 2),
+            "today_charge_kwh": round(today_charge, 3),
+            "today_discharge_kwh": round(today_discharge, 3),
+            "today_net_kwh": round(today_charge - today_discharge, 3),
         }
 
 
-class GWSmartTodayChargeSensor(CoordinatorEntity, SensorEntity):
-    """Sensor showing today's total battery charge in kWh."""
-
-    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
-        super().__init__(coordinator)
-        self._entry_id = entry_id
-        self._attr_name = f"{DEFAULT_NAME} Today Battery Charge"
-        self._attr_unique_id = f"{entry_id}_today_battery_charge"
-        self._attr_unit_of_measurement = "kWh"
-        self._attr_device_class = "energy"
-        self._attr_state_class = "total_increasing"
-
-    @property
-    def native_value(self) -> float:
-        """Return today's battery charge in kWh."""
-        from .const import CONF_TODAY_BATTERY_CHARGE_SENSOR
-        charge_sensor = self.coordinator.config.get(CONF_TODAY_BATTERY_CHARGE_SENSOR)
-        if charge_sensor:
-            state = self.coordinator.hass.states.get(charge_sensor)
-            if state:
-                try:
-                    return round(float(state.state), 3)
-                except (ValueError, TypeError):
-                    return 0.0
-        return 0.0
-
-
-class GWSmartTodayDischargeSensor(CoordinatorEntity, SensorEntity):
-    """Sensor showing today's total battery discharge in kWh."""
-
-    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
-        super().__init__(coordinator)
-        self._entry_id = entry_id
-        self._attr_name = f"{DEFAULT_NAME} Today Battery Discharge"
-        self._attr_unique_id = f"{entry_id}_today_battery_discharge"
-        self._attr_unit_of_measurement = "kWh"
-        self._attr_device_class = "energy"
-        self._attr_state_class = "total_increasing"
-
-    @property
-    def native_value(self) -> float:
-        """Return today's battery discharge in kWh."""
-        from .const import CONF_TODAY_BATTERY_DISCHARGE_SENSOR
-        discharge_sensor = self.coordinator.config.get(CONF_TODAY_BATTERY_DISCHARGE_SENSOR)
-        if discharge_sensor:
-            state = self.coordinator.hass.states.get(discharge_sensor)
-            if state:
-                try:
-                    return round(float(state.state), 3)
-                except (ValueError, TypeError):
-                    return 0.0
-        return 0.0
-
-
 class GWSmartNextGridChargeSensor(CoordinatorEntity, SensorEntity):
-    """Sensor showing next planned grid charging period for automations."""
+    """Sensor showing next planned grid charging and battery discharge periods."""
 
-    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+    def __init__(self, coordinator: GWSmartCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
-        self._entry_id = entry_id
-        self._attr_name = f"{DEFAULT_NAME} Next Grid Charge"
-        self._attr_unique_id = f"{entry_id}_next_grid_charge"
-        self._attr_icon = "mdi:battery-charging"
+        self._entry = entry
+        self._attr_name = f"{DEFAULT_NAME} Next Charge"
+        self._attr_unique_id = f"{entry.entry_id}_next_charge"
+        self._attr_icon = "mdi:battery-clock"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device info."""
+        return get_device_info(self._entry)
 
     @property
     def native_value(self) -> str:
@@ -587,7 +591,7 @@ class GWSmartNextGridChargeSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return detailed attributes for next grid charging period."""
+        """Return detailed attributes for next charging and discharge periods."""
         data = self.coordinator.data or {}
         schedule = data.get("schedule", [])
         
@@ -599,12 +603,15 @@ class GWSmartNextGridChargeSensor(CoordinatorEntity, SensorEntity):
         
         # Find all grid charging periods today
         grid_charge_periods = []
+        discharge_periods = []
         current_period = None
+        discharge_period = None
         
         for slot in schedule:
             mode = slot.get("mode", "")
             slot_idx = slot.get("slot", 0)
             
+            # Process grid charging periods
             if "grid_charge" in mode:
                 if current_period is None:
                     current_period = {
@@ -642,102 +649,11 @@ class GWSmartNextGridChargeSensor(CoordinatorEntity, SensorEntity):
                     current_period["duration_minutes"] = (current_period["end_slot"] - current_period["start_slot"] + 1) * 15
                     grid_charge_periods.append(current_period)
                     current_period = None
-        
-        # Don't forget last period
-        if current_period:
-            current_period["avg_price"] /= current_period["count"]
-            current_period["duration_minutes"] = (current_period["end_slot"] - current_period["start_slot"] + 1) * 15
-            grid_charge_periods.append(current_period)
-        
-        # Find next period
-        next_period = None
-        for period in grid_charge_periods:
-            if period["start_slot"] >= current_slot:
-                next_period = period
-                break
-        
-        # If not found, use first period (tomorrow)
-        if not next_period and grid_charge_periods:
-            next_period = grid_charge_periods[0]
-            next_period["is_tomorrow"] = True
-        
-        attrs = {
-            "all_periods_today": grid_charge_periods,
-            "total_periods": len(grid_charge_periods),
-        }
-        
-        if next_period:
-            attrs.update({
-                "next_start_time": next_period["start_time"],
-                "next_end_time": next_period["end_time"],
-                "next_duration_minutes": next_period["duration_minutes"],
-                "next_avg_price": round(next_period["avg_price"], 4),
-                "next_mode": next_period["mode"],
-                "is_tomorrow": next_period.get("is_tomorrow", False),
-            })
-        
-        return attrs
-
-
-class GWSmartNextBatteryDischargeSensor(CoordinatorEntity, SensorEntity):
-    """Sensor showing next planned battery discharge period for automations."""
-
-    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
-        super().__init__(coordinator)
-        self._entry_id = entry_id
-        self._attr_name = f"{DEFAULT_NAME} Next Battery Discharge"
-        self._attr_unique_id = f"{entry_id}_next_battery_discharge"
-        self._attr_icon = "mdi:battery-arrow-down"
-
-    @property
-    def native_value(self) -> str:
-        """Return time of next battery discharge period."""
-        data = self.coordinator.data or {}
-        schedule = data.get("schedule", [])
-        
-        if not schedule:
-            return "none"
-        
-        now = datetime.now()
-        current_slot = now.hour * 4 + now.minute // 15
-        
-        # Find next battery discharge slot
-        for i in range(current_slot, len(schedule)):
-            slot = schedule[i]
-            if slot.get("mode") == "battery_discharge":
-                return slot.get("time", "unknown")
-        
-        # Check from beginning if not found
-        for i in range(0, current_slot):
-            slot = schedule[i]
-            if slot.get("mode") == "battery_discharge":
-                return f"{slot.get('time', 'unknown')} (tomorrow)"
-        
-        return "none"
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return detailed attributes for next battery discharge period."""
-        data = self.coordinator.data or {}
-        schedule = data.get("schedule", [])
-        
-        if not schedule:
-            return {}
-        
-        now = datetime.now()
-        current_slot = now.hour * 4 + now.minute // 15
-        
-        # Find all battery discharge periods
-        discharge_periods = []
-        current_period = None
-        
-        for slot in schedule:
-            mode = slot.get("mode", "")
-            slot_idx = slot.get("slot", 0)
             
+            # Process battery discharge periods
             if mode == "battery_discharge":
-                if current_period is None:
-                    current_period = {
+                if discharge_period is None:
+                    discharge_period = {
                         "start_time": slot.get("time", ""),
                         "start_slot": slot_idx,
                         "end_time": slot.get("time", ""),
@@ -745,16 +661,16 @@ class GWSmartNextBatteryDischargeSensor(CoordinatorEntity, SensorEntity):
                         "avg_discharge_kw": abs(slot.get("planned_charge_kW", 0.0)),
                         "count": 1,
                     }
-                elif slot_idx == current_period["end_slot"] + 1:
-                    current_period["end_time"] = slot.get("time", "")
-                    current_period["end_slot"] = slot_idx
-                    current_period["avg_discharge_kw"] += abs(slot.get("planned_charge_kW", 0.0))
-                    current_period["count"] += 1
+                elif slot_idx == discharge_period["end_slot"] + 1:
+                    discharge_period["end_time"] = slot.get("time", "")
+                    discharge_period["end_slot"] = slot_idx
+                    discharge_period["avg_discharge_kw"] += abs(slot.get("planned_charge_kW", 0.0))
+                    discharge_period["count"] += 1
                 else:
-                    current_period["avg_discharge_kw"] /= current_period["count"]
-                    current_period["duration_minutes"] = (current_period["end_slot"] - current_period["start_slot"] + 1) * 15
-                    discharge_periods.append(current_period)
-                    current_period = {
+                    discharge_period["avg_discharge_kw"] /= discharge_period["count"]
+                    discharge_period["duration_minutes"] = (discharge_period["end_slot"] - discharge_period["start_slot"] + 1) * 15
+                    discharge_periods.append(discharge_period)
+                    discharge_period = {
                         "start_time": slot.get("time", ""),
                         "start_slot": slot_idx,
                         "end_time": slot.get("time", ""),
@@ -763,40 +679,70 @@ class GWSmartNextBatteryDischargeSensor(CoordinatorEntity, SensorEntity):
                         "count": 1,
                     }
             else:
-                if current_period:
-                    current_period["avg_discharge_kw"] /= current_period["count"]
-                    current_period["duration_minutes"] = (current_period["end_slot"] - current_period["start_slot"] + 1) * 15
-                    discharge_periods.append(current_period)
-                    current_period = None
+                if discharge_period:
+                    discharge_period["avg_discharge_kw"] /= discharge_period["count"]
+                    discharge_period["duration_minutes"] = (discharge_period["end_slot"] - discharge_period["start_slot"] + 1) * 15
+                    discharge_periods.append(discharge_period)
+                    discharge_period = None
         
+        # Don't forget last periods
         if current_period:
-            current_period["avg_discharge_kw"] /= current_period["count"]
+            current_period["avg_price"] /= current_period["count"]
             current_period["duration_minutes"] = (current_period["end_slot"] - current_period["start_slot"] + 1) * 15
-            discharge_periods.append(current_period)
+            grid_charge_periods.append(current_period)
         
-        # Find next period
-        next_period = None
-        for period in discharge_periods:
+        if discharge_period:
+            discharge_period["avg_discharge_kw"] /= discharge_period["count"]
+            discharge_period["duration_minutes"] = (discharge_period["end_slot"] - discharge_period["start_slot"] + 1) * 15
+            discharge_periods.append(discharge_period)
+        
+        # Find next periods
+        next_charge_period = None
+        next_discharge_period = None
+        
+        for period in grid_charge_periods:
             if period["start_slot"] >= current_slot:
-                next_period = period
+                next_charge_period = period
                 break
         
-        if not next_period and discharge_periods:
-            next_period = discharge_periods[0]
-            next_period["is_tomorrow"] = True
+        for period in discharge_periods:
+            if period["start_slot"] >= current_slot:
+                next_discharge_period = period
+                break
+        
+        # If not found, use first periods (tomorrow)
+        if not next_charge_period and grid_charge_periods:
+            next_charge_period = grid_charge_periods[0]
+            next_charge_period["is_tomorrow"] = True
+        
+        if not next_discharge_period and discharge_periods:
+            next_discharge_period = discharge_periods[0]
+            next_discharge_period["is_tomorrow"] = True
         
         attrs = {
-            "all_periods_today": discharge_periods,
-            "total_periods": len(discharge_periods),
+            "all_charge_periods_today": grid_charge_periods,
+            "total_charge_periods": len(grid_charge_periods),
+            "all_discharge_periods_today": discharge_periods,
+            "total_discharge_periods": len(discharge_periods),
         }
         
-        if next_period:
+        if next_charge_period:
             attrs.update({
-                "next_start_time": next_period["start_time"],
-                "next_end_time": next_period["end_time"],
-                "next_duration_minutes": next_period["duration_minutes"],
-                "next_avg_discharge_kw": round(next_period["avg_discharge_kw"], 3),
-                "is_tomorrow": next_period.get("is_tomorrow", False),
+                "next_charge_start_time": next_charge_period["start_time"],
+                "next_charge_end_time": next_charge_period["end_time"],
+                "next_charge_duration_minutes": next_charge_period["duration_minutes"],
+                "next_charge_avg_price": round(next_charge_period["avg_price"], 4),
+                "next_charge_mode": next_charge_period["mode"],
+                "next_charge_is_tomorrow": next_charge_period.get("is_tomorrow", False),
+            })
+        
+        if next_discharge_period:
+            attrs.update({
+                "next_discharge_start_time": next_discharge_period["start_time"],
+                "next_discharge_end_time": next_discharge_period["end_time"],
+                "next_discharge_duration_minutes": next_discharge_period["duration_minutes"],
+                "next_discharge_avg_kw": round(next_discharge_period["avg_discharge_kw"], 3),
+                "next_discharge_is_tomorrow": next_discharge_period.get("is_tomorrow", False),
             })
         
         return attrs
@@ -805,15 +751,20 @@ class GWSmartNextBatteryDischargeSensor(CoordinatorEntity, SensorEntity):
 class GWSmartActivityLogSensor(CoordinatorEntity, SensorEntity):
     """Sensor showing activity log and state changes for automations."""
 
-    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+    def __init__(self, coordinator: GWSmartCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
-        self._entry_id = entry_id
+        self._entry = entry
         self._attr_name = f"{DEFAULT_NAME} Activity Log"
-        self._attr_unique_id = f"{entry_id}_activity_log"
+        self._attr_unique_id = f"{entry.entry_id}_activity_log"
         self._attr_icon = "mdi:history"
         self._activity_log: List[Dict[str, Any]] = []
         self._last_mode = None
         self._last_should_charge = None
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device info."""
+        return get_device_info(self._entry)
 
     @property
     def native_value(self) -> str:
@@ -905,13 +856,18 @@ class GWSmartActivityLogSensor(CoordinatorEntity, SensorEntity):
 class GWSmartDailyStatisticsSensor(CoordinatorEntity, SensorEntity):
     """Sensor showing daily statistics for charging optimization."""
 
-    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+    def __init__(self, coordinator: GWSmartCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
-        self._entry_id = entry_id
+        self._entry = entry
         self._attr_name = f"{DEFAULT_NAME} Daily Statistics"
-        self._attr_unique_id = f"{entry_id}_daily_statistics"
+        self._attr_unique_id = f"{entry.entry_id}_daily_statistics"
         self._attr_icon = "mdi:chart-bar"
         self._attr_unit_of_measurement = "kWh"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device info."""
+        return get_device_info(self._entry)
 
     @property
     def native_value(self) -> float:
@@ -1019,12 +975,17 @@ class GWSmartDailyStatisticsSensor(CoordinatorEntity, SensorEntity):
 class GWSmartPredictionSensor(CoordinatorEntity, SensorEntity):
     """Sensor showing ML predictions and forecast confidence."""
 
-    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+    def __init__(self, coordinator: GWSmartCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
-        self._entry_id = entry_id
+        self._entry = entry
         self._attr_name = f"{DEFAULT_NAME} Prediction"
-        self._attr_unique_id = f"{entry_id}_prediction"
+        self._attr_unique_id = f"{entry.entry_id}_prediction"
         self._attr_icon = "mdi:crystal-ball"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device info."""
+        return get_device_info(self._entry)
 
     @property
     def native_value(self) -> str:
