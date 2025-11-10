@@ -1,7 +1,142 @@
-# Example Automations for GW Smart Charging v1.4.0
+# Example Automations for GW Smart Charging v1.6.0
 # ===================================================
-# Note: V 1.4.0 integrace sama automaticky volá nabíjecí skripty každé 2 minuty.
+# Note: V 1.4.0+ integrace sama automaticky volá nabíjecí skripty každé 2 minuty.
 # Tyto automatizace jsou pouze příklady pro pokročilé případy nebo notifikace.
+
+# NEW: Příklady použití nové služby get_charging_schedule (v1.6.0)
+# =================================================================
+
+# 1. Notifikace o plánu nabíjení ze sítě
+# ---------------------------------------
+- alias: "GW Charging: Ranní notifikace o plánu grid nabíjení"
+  description: "Denní přehled plánovaných období nabíjení ze sítě"
+  trigger:
+    - platform: time
+      at: "06:00:00"
+  action:
+    - service: gw_smart_charging.get_charging_schedule
+      response_variable: schedule_data
+    - service: notify.mobile_app
+      data:
+        title: "📊 Plán nabíjení baterie"
+        message: >
+          Grid nabíjení: {{ schedule_data.daily_statistics.grid_charging_periods_count }} období
+          Celkem: {{ schedule_data.daily_statistics.total_grid_charge_kwh }} kWh
+          Odhadované náklady: {{ schedule_data.daily_statistics.estimated_grid_cost_czk }} Kč
+          {% if schedule_data.grid_charging_periods | length > 0 %}
+          První nabíjení: {{ schedule_data.grid_charging_periods[0].start_time }}-{{ schedule_data.grid_charging_periods[0].end_time }}
+          Cena: {{ schedule_data.grid_charging_periods[0].avg_price }} Kč/kWh
+          {% endif %}
+
+# 2. Automatizace založená na příštím období nabíjení
+# ----------------------------------------------------
+- alias: "GW Charging: Příprava před nabíjením"
+  description: "Provede akci 15 minut před plánovaným nabíjením"
+  trigger:
+    - platform: time_pattern
+      minutes: "/15"
+  action:
+    - service: gw_smart_charging.get_charging_schedule
+      response_variable: schedule_data
+    - condition: template
+      value_template: >
+        {% set next_charge = schedule_data.get('grid_charging_periods', []) | selectattr('start_slot', 'gt', schedule_data.current_status.slot) | list | first %}
+        {% if next_charge %}
+          {{ (next_charge.start_slot - schedule_data.current_status.slot) == 1 }}
+        {% else %}
+          false
+        {% endif %}
+    - service: notify.persistent_notification
+      data:
+        title: "⚡ Připravuji se na nabíjení"
+        message: "Za 15 minut začne nabíjení ze sítě"
+
+# 3. Kontrola, zda je plánováno vybíjení baterie
+# -----------------------------------------------
+- alias: "GW Charging: Kontrola battery discharge"
+  description: "Upozornění když je plánováno vybíjení baterie v peak hours"
+  trigger:
+    - platform: time_pattern
+      hours: "/1"
+  action:
+    - service: gw_smart_charging.get_charging_schedule
+      response_variable: schedule_data
+    - condition: template
+      value_template: "{{ schedule_data.daily_statistics.battery_discharge_periods_count > 0 }}"
+    - service: logbook.log
+      data:
+        name: "GW Smart Charging"
+        message: >
+          Plánováno {{ schedule_data.daily_statistics.battery_discharge_periods_count }} období vybíjení baterie
+          Celkem: {{ schedule_data.daily_statistics.total_battery_discharge_kwh }} kWh
+
+# 4. Notifikace o aktivitě systému
+# ---------------------------------
+- alias: "GW Charging: Activity log notification"
+  description: "Notifikace při změně aktivity systému"
+  trigger:
+    - platform: state
+      entity_id: sensor.gw_smart_charging_activity_log
+  condition:
+    - condition: template
+      value_template: "{{ trigger.from_state.state != trigger.to_state.state }}"
+  action:
+    - service: notify.persistent_notification
+      data:
+        title: "🔄 GW Charging - Změna aktivity"
+        message: >
+          Nový stav: {{ states('sensor.gw_smart_charging_activity_log') }}
+          SOC: {{ state_attr('sensor.gw_smart_charging_activity_log', 'current_soc_pct') }}%
+          Baterie: {{ state_attr('sensor.gw_smart_charging_activity_log', 'battery_status') }}
+
+# 5. Přehled následujícího období nabíjení
+# -----------------------------------------
+- alias: "GW Charging: Info o příštím nabíjení"
+  description: "Zobrazí info o příštím plánovaném nabíjení"
+  trigger:
+    - platform: state
+      entity_id: sensor.gw_smart_charging_next_grid_charge
+  condition:
+    - condition: template
+      value_template: "{{ trigger.to_state.state != 'none' }}"
+  action:
+    - service: persistent_notification.create
+      data:
+        title: "⚡ Naplánováno grid nabíjení"
+        message: >
+          Čas: {{ states('sensor.gw_smart_charging_next_grid_charge') }}
+          Délka: {{ state_attr('sensor.gw_smart_charging_next_grid_charge', 'next_duration_minutes') }} min
+          Průměrná cena: {{ state_attr('sensor.gw_smart_charging_next_grid_charge', 'next_avg_price') }} Kč/kWh
+          Režim: {{ state_attr('sensor.gw_smart_charging_next_grid_charge', 'next_mode') }}
+
+# 6. Využití dat služby pro scénu
+# --------------------------------
+- alias: "GW Charging: Nastavit scénu podle plánu"
+  description: "Upraví nastavení domu podle plánu nabíjení"
+  trigger:
+    - platform: time_pattern
+      minutes: "/15"
+  action:
+    - service: gw_smart_charging.get_charging_schedule
+      response_variable: schedule_data
+    - choose:
+        - conditions:
+            - condition: template
+              value_template: "{{ schedule_data.current_status.mode in ['grid_charge_cheap', 'grid_charge_optimal'] }}"
+          sequence:
+            - service: scene.turn_on
+              target:
+                entity_id: scene.low_consumption_mode
+        - conditions:
+            - condition: template
+              value_template: "{{ schedule_data.current_status.mode == 'battery_discharge' }}"
+          sequence:
+            - service: scene.turn_on
+              target:
+                entity_id: scene.normal_mode
+
+# PŮVODNÍ AUTOMATIZACE (z v1.4.0)
+# ================================
 
 # 1. Notifikace při změně režimu nabíjení
 # ----------------------------------------

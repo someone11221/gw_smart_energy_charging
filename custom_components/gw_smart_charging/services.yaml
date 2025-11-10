@@ -1,0 +1,19 @@
+optimize_now:
+  name: Optimize Now
+  description: Trigger immediate recalculation of charging schedule
+  fields: {}
+
+apply_schedule_now:
+  name: Apply Schedule Now
+  description: Apply the current charging schedule immediately
+  fields: {}
+
+get_charging_schedule:
+  name: Get Charging Schedule
+  description: >-
+    Get detailed battery charging schedule with information about planned grid charging,
+    battery discharge, solar charging, and grid import periods. Returns comprehensive
+    data for use in automations, scripts, and scenes.
+  response:
+    required: true
+  fields: {}

@@ -29,6 +29,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         GWSmartBatteryPowerSensor(coordinator, entry.entry_id),  # Real-time battery power
         GWSmartTodayChargeSensor(coordinator, entry.entry_id),  # Today's charge (kWh)
         GWSmartTodayDischargeSensor(coordinator, entry.entry_id),  # Today's discharge (kWh)
+        # New sensors for automation support
+        GWSmartNextGridChargeSensor(coordinator, entry.entry_id),  # Next grid charging period
+        GWSmartNextBatteryDischargeSensor(coordinator, entry.entry_id),  # Next battery discharge period
+        GWSmartActivityLogSensor(coordinator, entry.entry_id),  # Activity log and state changes
         # series sensors for Lovelace plotting (15-min resolution)
         GWSmartSeriesSensor(coordinator, entry.entry_id, "pv"),
         GWSmartSeriesSensor(coordinator, entry.entry_id, "load"),
@@ -537,3 +541,359 @@ class GWSmartTodayDischargeSensor(CoordinatorEntity, SensorEntity):
                 except (ValueError, TypeError):
                     return 0.0
         return 0.0
+
+
+class GWSmartNextGridChargeSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing next planned grid charging period for automations."""
+
+    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._attr_name = f"{DEFAULT_NAME} Next Grid Charge"
+        self._attr_unique_id = f"{entry_id}_next_grid_charge"
+        self._attr_icon = "mdi:battery-charging"
+
+    @property
+    def native_value(self) -> str:
+        """Return time of next grid charging period."""
+        data = self.coordinator.data or {}
+        schedule = data.get("schedule", [])
+        
+        if not schedule:
+            return "none"
+        
+        # Get current slot
+        now = datetime.now()
+        current_slot = now.hour * 4 + now.minute // 15
+        
+        # Find next grid charging slot
+        for i in range(current_slot, len(schedule)):
+            slot = schedule[i]
+            mode = slot.get("mode", "")
+            if "grid_charge" in mode:
+                return slot.get("time", "unknown")
+        
+        # Check from beginning if not found
+        for i in range(0, current_slot):
+            slot = schedule[i]
+            mode = slot.get("mode", "")
+            if "grid_charge" in mode:
+                return f"{slot.get('time', 'unknown')} (tomorrow)"
+        
+        return "none"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return detailed attributes for next grid charging period."""
+        data = self.coordinator.data or {}
+        schedule = data.get("schedule", [])
+        
+        if not schedule:
+            return {}
+        
+        now = datetime.now()
+        current_slot = now.hour * 4 + now.minute // 15
+        
+        # Find all grid charging periods today
+        grid_charge_periods = []
+        current_period = None
+        
+        for slot in schedule:
+            mode = slot.get("mode", "")
+            slot_idx = slot.get("slot", 0)
+            
+            if "grid_charge" in mode:
+                if current_period is None:
+                    current_period = {
+                        "start_time": slot.get("time", ""),
+                        "start_slot": slot_idx,
+                        "end_time": slot.get("time", ""),
+                        "end_slot": slot_idx,
+                        "mode": mode,
+                        "avg_price": slot.get("price_czk_kwh", 0.0),
+                        "count": 1,
+                    }
+                elif slot_idx == current_period["end_slot"] + 1:
+                    # Consecutive slot
+                    current_period["end_time"] = slot.get("time", "")
+                    current_period["end_slot"] = slot_idx
+                    current_period["avg_price"] += slot.get("price_czk_kwh", 0.0)
+                    current_period["count"] += 1
+                else:
+                    # New period
+                    current_period["avg_price"] /= current_period["count"]
+                    current_period["duration_minutes"] = (current_period["end_slot"] - current_period["start_slot"] + 1) * 15
+                    grid_charge_periods.append(current_period)
+                    current_period = {
+                        "start_time": slot.get("time", ""),
+                        "start_slot": slot_idx,
+                        "end_time": slot.get("time", ""),
+                        "end_slot": slot_idx,
+                        "mode": mode,
+                        "avg_price": slot.get("price_czk_kwh", 0.0),
+                        "count": 1,
+                    }
+            else:
+                if current_period:
+                    current_period["avg_price"] /= current_period["count"]
+                    current_period["duration_minutes"] = (current_period["end_slot"] - current_period["start_slot"] + 1) * 15
+                    grid_charge_periods.append(current_period)
+                    current_period = None
+        
+        # Don't forget last period
+        if current_period:
+            current_period["avg_price"] /= current_period["count"]
+            current_period["duration_minutes"] = (current_period["end_slot"] - current_period["start_slot"] + 1) * 15
+            grid_charge_periods.append(current_period)
+        
+        # Find next period
+        next_period = None
+        for period in grid_charge_periods:
+            if period["start_slot"] >= current_slot:
+                next_period = period
+                break
+        
+        # If not found, use first period (tomorrow)
+        if not next_period and grid_charge_periods:
+            next_period = grid_charge_periods[0]
+            next_period["is_tomorrow"] = True
+        
+        attrs = {
+            "all_periods_today": grid_charge_periods,
+            "total_periods": len(grid_charge_periods),
+        }
+        
+        if next_period:
+            attrs.update({
+                "next_start_time": next_period["start_time"],
+                "next_end_time": next_period["end_time"],
+                "next_duration_minutes": next_period["duration_minutes"],
+                "next_avg_price": round(next_period["avg_price"], 4),
+                "next_mode": next_period["mode"],
+                "is_tomorrow": next_period.get("is_tomorrow", False),
+            })
+        
+        return attrs
+
+
+class GWSmartNextBatteryDischargeSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing next planned battery discharge period for automations."""
+
+    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._attr_name = f"{DEFAULT_NAME} Next Battery Discharge"
+        self._attr_unique_id = f"{entry_id}_next_battery_discharge"
+        self._attr_icon = "mdi:battery-arrow-down"
+
+    @property
+    def native_value(self) -> str:
+        """Return time of next battery discharge period."""
+        data = self.coordinator.data or {}
+        schedule = data.get("schedule", [])
+        
+        if not schedule:
+            return "none"
+        
+        now = datetime.now()
+        current_slot = now.hour * 4 + now.minute // 15
+        
+        # Find next battery discharge slot
+        for i in range(current_slot, len(schedule)):
+            slot = schedule[i]
+            if slot.get("mode") == "battery_discharge":
+                return slot.get("time", "unknown")
+        
+        # Check from beginning if not found
+        for i in range(0, current_slot):
+            slot = schedule[i]
+            if slot.get("mode") == "battery_discharge":
+                return f"{slot.get('time', 'unknown')} (tomorrow)"
+        
+        return "none"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return detailed attributes for next battery discharge period."""
+        data = self.coordinator.data or {}
+        schedule = data.get("schedule", [])
+        
+        if not schedule:
+            return {}
+        
+        now = datetime.now()
+        current_slot = now.hour * 4 + now.minute // 15
+        
+        # Find all battery discharge periods
+        discharge_periods = []
+        current_period = None
+        
+        for slot in schedule:
+            mode = slot.get("mode", "")
+            slot_idx = slot.get("slot", 0)
+            
+            if mode == "battery_discharge":
+                if current_period is None:
+                    current_period = {
+                        "start_time": slot.get("time", ""),
+                        "start_slot": slot_idx,
+                        "end_time": slot.get("time", ""),
+                        "end_slot": slot_idx,
+                        "avg_discharge_kw": abs(slot.get("planned_charge_kW", 0.0)),
+                        "count": 1,
+                    }
+                elif slot_idx == current_period["end_slot"] + 1:
+                    current_period["end_time"] = slot.get("time", "")
+                    current_period["end_slot"] = slot_idx
+                    current_period["avg_discharge_kw"] += abs(slot.get("planned_charge_kW", 0.0))
+                    current_period["count"] += 1
+                else:
+                    current_period["avg_discharge_kw"] /= current_period["count"]
+                    current_period["duration_minutes"] = (current_period["end_slot"] - current_period["start_slot"] + 1) * 15
+                    discharge_periods.append(current_period)
+                    current_period = {
+                        "start_time": slot.get("time", ""),
+                        "start_slot": slot_idx,
+                        "end_time": slot.get("time", ""),
+                        "end_slot": slot_idx,
+                        "avg_discharge_kw": abs(slot.get("planned_charge_kW", 0.0)),
+                        "count": 1,
+                    }
+            else:
+                if current_period:
+                    current_period["avg_discharge_kw"] /= current_period["count"]
+                    current_period["duration_minutes"] = (current_period["end_slot"] - current_period["start_slot"] + 1) * 15
+                    discharge_periods.append(current_period)
+                    current_period = None
+        
+        if current_period:
+            current_period["avg_discharge_kw"] /= current_period["count"]
+            current_period["duration_minutes"] = (current_period["end_slot"] - current_period["start_slot"] + 1) * 15
+            discharge_periods.append(current_period)
+        
+        # Find next period
+        next_period = None
+        for period in discharge_periods:
+            if period["start_slot"] >= current_slot:
+                next_period = period
+                break
+        
+        if not next_period and discharge_periods:
+            next_period = discharge_periods[0]
+            next_period["is_tomorrow"] = True
+        
+        attrs = {
+            "all_periods_today": discharge_periods,
+            "total_periods": len(discharge_periods),
+        }
+        
+        if next_period:
+            attrs.update({
+                "next_start_time": next_period["start_time"],
+                "next_end_time": next_period["end_time"],
+                "next_duration_minutes": next_period["duration_minutes"],
+                "next_avg_discharge_kw": round(next_period["avg_discharge_kw"], 3),
+                "is_tomorrow": next_period.get("is_tomorrow", False),
+            })
+        
+        return attrs
+
+
+class GWSmartActivityLogSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing activity log and state changes for automations."""
+
+    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._attr_name = f"{DEFAULT_NAME} Activity Log"
+        self._attr_unique_id = f"{entry_id}_activity_log"
+        self._attr_icon = "mdi:history"
+        self._activity_log: List[Dict[str, Any]] = []
+        self._last_mode = None
+        self._last_should_charge = None
+
+    @property
+    def native_value(self) -> str:
+        """Return current activity status."""
+        data = self.coordinator.data or {}
+        schedule = data.get("schedule", [])
+        
+        if not schedule:
+            return "no_data"
+        
+        now = datetime.now()
+        current_slot = now.hour * 4 + now.minute // 15
+        
+        if 0 <= current_slot < len(schedule):
+            current_slot_data = schedule[current_slot]
+            mode = current_slot_data.get("mode", "unknown")
+            should_charge = current_slot_data.get("should_charge", False)
+            
+            # Track state changes
+            if mode != self._last_mode or should_charge != self._last_should_charge:
+                self._add_activity_log(mode, should_charge, current_slot_data)
+                self._last_mode = mode
+                self._last_should_charge = should_charge
+            
+            # Return human-readable status
+            if should_charge:
+                return f"charging ({mode})"
+            elif mode == "battery_discharge":
+                return "discharging"
+            elif mode == "solar_charge":
+                return "solar_charging"
+            else:
+                return mode
+        
+        return "unknown"
+
+    def _add_activity_log(self, mode: str, should_charge: bool, slot_data: Dict[str, Any]) -> None:
+        """Add an entry to the activity log."""
+        now = datetime.now()
+        
+        entry = {
+            "timestamp": now.isoformat(),
+            "time": now.strftime("%H:%M"),
+            "mode": mode,
+            "should_charge": should_charge,
+            "price_czk_kwh": slot_data.get("price_czk_kwh", 0.0),
+            "soc_pct": slot_data.get("soc_pct_end", 0.0),
+            "is_critical_hour": slot_data.get("is_critical_hour", False),
+        }
+        
+        self._activity_log.append(entry)
+        
+        # Keep only last 100 entries
+        if len(self._activity_log) > 100:
+            self._activity_log = self._activity_log[-100:]
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return activity log and statistics."""
+        data = self.coordinator.data or {}
+        schedule = data.get("schedule", [])
+        battery_metrics = data.get("battery_metrics", {})
+        
+        # Count mode changes today
+        mode_changes = {}
+        for i in range(len(schedule) - 1):
+            current_mode = schedule[i].get("mode", "unknown")
+            next_mode = schedule[i + 1].get("mode", "unknown")
+            if current_mode != next_mode:
+                transition = f"{current_mode} -> {next_mode}"
+                mode_changes[transition] = mode_changes.get(transition, 0) + 1
+        
+        # Get recent activity (last 10 entries)
+        recent_activity = self._activity_log[-10:] if self._activity_log else []
+        
+        return {
+            "activity_log": self._activity_log,
+            "recent_activity": recent_activity,
+            "total_log_entries": len(self._activity_log),
+            "mode_transitions_today": mode_changes,
+            "last_update": data.get("last_update", "never"),
+            "battery_status": battery_metrics.get("battery_status", "unknown"),
+            "current_soc_pct": battery_metrics.get("soc_pct", 0.0),
+            "automation_active": self.coordinator.config.get("enable_automation", True),
+            "last_script_state": self.coordinator._last_script_state,
+        }
