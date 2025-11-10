@@ -4,12 +4,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 from datetime import datetime
+import json
 
 from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
+from .const import DOMAIN, CONF_LANGUAGE, DEFAULT_LANGUAGE
+from .translations import get_translation, get_all_translations
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,6 +46,16 @@ class GWSmartChargingDashboardView(HomeAssistantView):
         """Build the dashboard HTML."""
         
         import json
+        
+        # Get language preference from first coordinator config
+        language = DEFAULT_LANGUAGE
+        for entry_id, coordinator in integration_data.items():
+            if hasattr(coordinator, 'config'):
+                language = coordinator.config.get(CONF_LANGUAGE, DEFAULT_LANGUAGE)
+                break
+        
+        # Get all translations for selected language
+        t = get_all_translations(language)
         
         # Get entities from all coordinators
         entities_html = ""
@@ -80,21 +92,39 @@ class GWSmartChargingDashboardView(HomeAssistantView):
         if schedule_entity and schedule_entity.attributes:
             schedule_data = schedule_entity.attributes.get('schedule', [])
         
+        # Get SOC forecast data for charts
+        soc_forecast_data = []
+        soc_entity = self.hass.states.get('sensor.gw_smart_charging_soc_forecast')
+        if soc_entity and soc_entity.attributes:
+            soc_forecast_data = soc_entity.attributes.get('soc_forecast', [])
+        
+        # Get forecast and price data for charts
+        forecast_data = []
+        price_data = []
+        forecast_entity = self.hass.states.get('sensor.gw_smart_charging_forecast')
+        if forecast_entity and forecast_entity.attributes:
+            forecast_data = forecast_entity.attributes.get('forecast_15min', [])
+            price_data = forecast_entity.attributes.get('price_15min', [])
+        
         # Get switch state
         switch_state = "unknown"
         switch_entity = self.hass.states.get('switch.gw_smart_charging_auto_charging')
         if switch_entity:
             switch_state = switch_entity.state
         
-        # Convert schedule data to JSON for embedding
+        # Convert data to JSON for embedding
         schedule_json = json.dumps(schedule_data)
+        soc_forecast_json = json.dumps(soc_forecast_data[:96] if len(soc_forecast_data) > 0 else [])
+        price_json = json.dumps(price_data[:96] if len(price_data) > 0 else [])
+        forecast_json = json.dumps(forecast_data[:96] if len(forecast_data) > 0 else [])
         
         html = f"""
         <!DOCTYPE html>
         <html>
         <head>
-            <title>GW Smart Charging Dashboard</title>
+            <title>{t['dashboard_title']}</title>
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
             <style>
                 * {{
                     margin: 0;
@@ -388,10 +418,10 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                 <div class="header">
                     <h1>
                         <span class="icon">🔋</span>
-                        GW Smart Charging
-                        <span class="version">v2.1.0</span>
+                        {t['dashboard_title']}
+                        <span class="version">v2.2.0</span>
                     </h1>
-                    <p>Advanced battery charging optimization for Home Assistant</p>
+                    <p>{t['integration_status']}: <strong style="color: #4CAF50;">{'Active' if switch_state == 'on' else 'Inactive'}</strong></p>
                 </div>
                 
                 <div class="stats-grid">
@@ -508,6 +538,20 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                     <div id="control-status" style="margin-top: 15px; padding: 10px; border-radius: 5px; display: none;"></div>
                 </div>
                 
+                <!-- NEW v2.2.0: Charts Section -->
+                <div class="section">
+                    <h2>📊 {t['price_chart']} & {t['24h_prediction']}</h2>
+                    <div style="margin-bottom: 30px;">
+                        <canvas id="priceChart" style="max-height: 300px;"></canvas>
+                    </div>
+                    <div style="margin-bottom: 30px;">
+                        <canvas id="socChart" style="max-height: 300px;"></canvas>
+                    </div>
+                    <div style="margin-bottom: 30px;">
+                        <canvas id="energyFlowChart" style="max-height: 300px;"></canvas>
+                    </div>
+                </div>
+                
                 <!-- NEW v1.9.5: 24h Prediction Plan -->
                 <div class="section">
                     <h2>🔮 24-Hour Prediction Plan</h2>
@@ -571,7 +615,7 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                 </div>
                 
                 <div class="footer">
-                    <p>GW Smart Charging v2.1.0 | © 2024 | Created for Home Assistant</p>
+                    <p>GW Smart Charging v2.2.0 | © 2024 | Created for Home Assistant</p>
                     <p style="margin-top: 10px;">For documentation and support, visit <a href="https://github.com/someone11221/gw_smart_energy_charging" style="color: white; text-decoration: underline;">GitHub Repository</a></p>
                 </div>
             </div>
@@ -580,7 +624,201 @@ class GWSmartChargingDashboardView(HomeAssistantView):
             <script>
                 // Embedded schedule data from backend (fixes JSON parsing error)
                 const SCHEDULE_DATA = {schedule_json};
+                const SOC_FORECAST_DATA = {soc_forecast_json};
+                const PRICE_DATA = {price_json};
+                const FORECAST_DATA = {forecast_json};
                 const SWITCH_STATE = '{switch_state}';
+                const CURRENT_LANGUAGE = "{language}";
+                
+                // Initialize charts on page load
+                window.addEventListener('DOMContentLoaded', function() {{
+                    initializeCharts();
+                    loadPredictionTimeline();
+                }});
+                
+                // Initialize all charts
+                function initializeCharts() {{
+                    initPriceChart();
+                    initSocChart();
+                    initEnergyFlowChart();
+                }}
+                
+                // Price chart with charging schedule overlay
+                function initPriceChart() {{
+                    const ctx = document.getElementById('priceChart');
+                    if (!ctx) return;
+                    
+                    // Generate labels for 96 15-minute intervals (24 hours)
+                    const labels = [];
+                    for (let h = 0; h < 24; h++) {{
+                        for (let m = 0; m < 60; m += 15) {{
+                            labels.push(`${{h.toString().padStart(2, '0')}}:${{m.toString().padStart(2, '0')}}`);
+                        }}
+                    }}
+                    
+                    // Prepare charging schedule overlay
+                    const chargingData = new Array(96).fill(null);
+                    if (SCHEDULE_DATA && SCHEDULE_DATA.length > 0) {{
+                        SCHEDULE_DATA.forEach((slot, idx) => {{
+                            if (slot.should_charge && idx < 96) {{
+                                chargingData[idx] = PRICE_DATA[idx] || 0;
+                            }}
+                        }});
+                    }}
+                    
+                    new Chart(ctx, {{
+                        type: 'line',
+                        data: {{
+                            labels: labels,
+                            datasets: [
+                                {{
+                                    label: CURRENT_LANGUAGE === 'cs' ? 'Cena elektřiny (CZK/kWh)' : 'Electricity Price (CZK/kWh)',
+                                    data: PRICE_DATA.length > 0 ? PRICE_DATA.slice(0, 96) : [],
+                                    borderColor: 'rgb(102, 126, 234)',
+                                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                                    tension: 0.3,
+                                    fill: true
+                                }},
+                                {{
+                                    label: CURRENT_LANGUAGE === 'cs' ? 'Plánované nabíjení' : 'Planned Charging',
+                                    data: chargingData,
+                                    borderColor: 'rgb(76, 175, 80)',
+                                    backgroundColor: 'rgba(76, 175, 80, 0.3)',
+                                    borderWidth: 3,
+                                    pointRadius: 4,
+                                    pointHoverRadius: 6
+                                }}
+                            ]
+                        }},
+                        options: {{
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            interaction: {{
+                                mode: 'index',
+                                intersect: false
+                            }},
+                            scales: {{
+                                x: {{
+                                    display: true,
+                                    ticks: {{
+                                        maxTicksLimit: 24,
+                                        callback: function(value, index) {{
+                                            return index % 4 === 0 ? labels[index] : '';
+                                        }}
+                                    }}
+                                }},
+                                y: {{
+                                    display: true,
+                                    title: {{
+                                        display: true,
+                                        text: 'CZK/kWh'
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }});
+                }}
+                
+                // SOC forecast chart
+                function initSocChart() {{
+                    const ctx = document.getElementById('socChart');
+                    if (!ctx) return;
+                    
+                    const labels = [];
+                    for (let h = 0; h < 24; h++) {{
+                        for (let m = 0; m < 60; m += 15) {{
+                            labels.push(`${{h.toString().padStart(2, '0')}}:${{m.toString().padStart(2, '0')}}`);
+                        }}
+                    }}
+                    
+                    new Chart(ctx, {{
+                        type: 'line',
+                        data: {{
+                            labels: labels,
+                            datasets: [{{
+                                label: CURRENT_LANGUAGE === 'cs' ? 'Předpověď stavu baterie (%)' : 'Battery SOC Forecast (%)',
+                                data: SOC_FORECAST_DATA.length > 0 ? SOC_FORECAST_DATA.slice(0, 96) : [],
+                                borderColor: 'rgb(255, 159, 64)',
+                                backgroundColor: 'rgba(255, 159, 64, 0.1)',
+                                tension: 0.3,
+                                fill: true
+                            }}]
+                        }},
+                        options: {{
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            scales: {{
+                                x: {{
+                                    display: true,
+                                    ticks: {{
+                                        maxTicksLimit: 24,
+                                        callback: function(value, index) {{
+                                            return index % 4 === 0 ? labels[index] : '';
+                                        }}
+                                    }}
+                                }},
+                                y: {{
+                                    display: true,
+                                    min: 0,
+                                    max: 100,
+                                    title: {{
+                                        display: true,
+                                        text: '%'
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }});
+                }}
+                
+                // Energy flow chart
+                function initEnergyFlowChart() {{
+                    const ctx = document.getElementById('energyFlowChart');
+                    if (!ctx) return;
+                    
+                    const labels = [];
+                    for (let h = 0; h < 24; h++) {{
+                        for (let m = 0; m < 60; m += 15) {{
+                            labels.push(`${{h.toString().padStart(2, '0')}}:${{m.toString().padStart(2, '0')}}`);
+                        }}
+                    }}
+                    
+                    new Chart(ctx, {{
+                        type: 'bar',
+                        data: {{
+                            labels: labels,
+                            datasets: [{{
+                                label: CURRENT_LANGUAGE === 'cs' ? 'Solární výroba (kWh)' : 'Solar Production (kWh)',
+                                data: FORECAST_DATA.length > 0 ? FORECAST_DATA.slice(0, 96) : [],
+                                backgroundColor: 'rgba(255, 206, 86, 0.7)',
+                                borderColor: 'rgb(255, 206, 86)',
+                                borderWidth: 1
+                            }}]
+                        }},
+                        options: {{
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            scales: {{
+                                x: {{
+                                    display: true,
+                                    ticks: {{
+                                        maxTicksLimit: 24,
+                                        callback: function(value, index) {{
+                                            return index % 4 === 0 ? labels[index] : '';
+                                        }}
+                                    }}
+                                }},
+                                y: {{
+                                    display: true,
+                                    title: {{
+                                        display: true,
+                                        text: 'kWh'
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }});
+                }}
                 
                 // Get authentication token from Home Assistant
                 function getAuthToken() {{
