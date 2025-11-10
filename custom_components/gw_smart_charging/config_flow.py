@@ -18,6 +18,8 @@ from .const import (
     CONF_SOC_SENSOR,
     CONF_BATTERY_POWER_SENSOR,
     CONF_GRID_IMPORT_SENSOR,
+    CONF_TODAY_BATTERY_CHARGE_SENSOR,
+    CONF_TODAY_BATTERY_DISCHARGE_SENSOR,
     CONF_BATTERY_CAPACITY,
     CONF_MAX_CHARGE_POWER,
     CONF_CHARGE_EFFICIENCY,
@@ -72,6 +74,8 @@ class GWSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_PV_POWER_SENSOR, default=""): str,
                 vol.Optional(CONF_BATTERY_POWER_SENSOR, default="sensor.battery_power"): str,
                 vol.Optional(CONF_GRID_IMPORT_SENSOR, default="sensor.energy_buy"): str,
+                vol.Optional(CONF_TODAY_BATTERY_CHARGE_SENSOR, default="sensor.today_battery_charge"): str,
+                vol.Optional(CONF_TODAY_BATTERY_DISCHARGE_SENSOR, default="sensor.today_battery_discharge"): str,
                 vol.Optional(CONF_CHARGING_ON_SCRIPT, default="script.nabijeni_on"): str,
                 vol.Optional(CONF_CHARGING_OFF_SCRIPT, default="script.nabijeni_off"): str,
                 vol.Optional(CONF_SOC_SENSOR, default="sensor.battery_state_of_charge"): str,
@@ -155,6 +159,14 @@ class GWSmartOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_GRID_IMPORT_SENSOR, 
                     default=current_config.get(CONF_GRID_IMPORT_SENSOR, "sensor.energy_buy")
+                ): str,
+                vol.Optional(
+                    CONF_TODAY_BATTERY_CHARGE_SENSOR, 
+                    default=current_config.get(CONF_TODAY_BATTERY_CHARGE_SENSOR, "sensor.today_battery_charge")
+                ): str,
+                vol.Optional(
+                    CONF_TODAY_BATTERY_DISCHARGE_SENSOR, 
+                    default=current_config.get(CONF_TODAY_BATTERY_DISCHARGE_SENSOR, "sensor.today_battery_discharge")
                 ): str,
                 vol.Optional(
                     CONF_CHARGING_ON_SCRIPT, 

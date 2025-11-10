@@ -1,0 +1,138 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "GW Smart Charging Setup",
+        "description": "Configure GW Smart Charging integration for optimal battery management",
+        "data": {
+          "name": "Integration Name",
+          "forecast_sensor": "Solar Forecast Sensor (15-min PV forecast)",
+          "price_sensor": "Electricity Price Sensor (CZK/kWh)",
+          "load_sensor": "House Consumption Sensor (W)",
+          "daily_load_sensor": "Daily Load Sensor (kWh)",
+          "pv_power_sensor": "PV Power Sensor (W)",
+          "battery_power_sensor": "Battery Power Sensor (W, +discharge/-charge)",
+          "grid_import_sensor": "Grid Import Sensor (W)",
+          "today_battery_charge_sensor": "Today's Battery Charge Sensor (kWh)",
+          "today_battery_discharge_sensor": "Today's Battery Discharge Sensor (kWh)",
+          "charging_on_script": "Charging ON Script",
+          "charging_off_script": "Charging OFF Script",
+          "soc_sensor": "Battery State of Charge Sensor (%)",
+          "battery_capacity_kwh": "Battery Capacity (kWh)",
+          "max_charge_power_kw": "Max Charge Power (kW)",
+          "charge_efficiency": "Charge Efficiency (0.0-1.0)",
+          "min_soc_pct": "Minimum SOC (%)",
+          "max_soc_pct": "Maximum SOC (%)",
+          "target_soc_pct": "Target SOC (%)",
+          "always_charge_price": "Always Charge Price (CZK/kWh)",
+          "never_charge_price": "Never Charge Price (CZK/kWh)",
+          "price_hysteresis_pct": "Price Hysteresis (%)",
+          "critical_hours_start": "Critical Hours Start (hour)",
+          "critical_hours_end": "Critical Hours End (hour)",
+          "critical_hours_soc_pct": "Critical Hours SOC (%)",
+          "enable_ml_prediction": "Enable ML Consumption Prediction",
+          "enable_automation": "Enable Automatic Charging Control",
+          "switch_on_means_charge": "Switch ON Means Charge"
+        }
+      }
+    },
+    "error": {
+      "unknown": "Unknown error occurred"
+    },
+    "abort": {
+      "already_configured": "Integration is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Reconfigure GW Smart Charging",
+        "description": "Update sensors and parameters. Hysteresis: ±% buffer around price thresholds. Critical hours: maintain higher SOC during specified hours (e.g., 17-21 for evening peak). ML prediction: learn from historical consumption patterns.",
+        "data": {
+          "name": "Integration Name",
+          "forecast_sensor": "Solar Forecast Sensor",
+          "price_sensor": "Electricity Price Sensor",
+          "load_sensor": "House Consumption Sensor",
+          "daily_load_sensor": "Daily Load Sensor",
+          "pv_power_sensor": "PV Power Sensor",
+          "battery_power_sensor": "Battery Power Sensor",
+          "grid_import_sensor": "Grid Import Sensor",
+          "today_battery_charge_sensor": "Today's Battery Charge Sensor",
+          "today_battery_discharge_sensor": "Today's Battery Discharge Sensor",
+          "charging_on_script": "Charging ON Script",
+          "charging_off_script": "Charging OFF Script",
+          "soc_sensor": "Battery SOC Sensor",
+          "battery_capacity_kwh": "Battery Capacity (kWh)",
+          "max_charge_power_kw": "Max Charge Power (kW)",
+          "charge_efficiency": "Charge Efficiency",
+          "min_soc_pct": "Minimum SOC (%)",
+          "max_soc_pct": "Maximum SOC (%)",
+          "target_soc_pct": "Target SOC (%)",
+          "always_charge_price": "Always Charge Price",
+          "never_charge_price": "Never Charge Price",
+          "price_hysteresis_pct": "Price Hysteresis (%)",
+          "critical_hours_start": "Critical Hours Start",
+          "critical_hours_end": "Critical Hours End",
+          "critical_hours_soc_pct": "Critical Hours SOC (%)",
+          "enable_ml_prediction": "Enable ML Prediction",
+          "enable_automation": "Enable Automation",
+          "switch_on_means_charge": "Switch ON = Charge"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "forecast_status": {
+        "name": "Forecast Status"
+      },
+      "forecast": {
+        "name": "Solar Forecast"
+      },
+      "price": {
+        "name": "Electricity Price"
+      },
+      "schedule": {
+        "name": "Charging Schedule"
+      },
+      "soc_forecast": {
+        "name": "SOC Forecast"
+      },
+      "diagnostics": {
+        "name": "Diagnostics"
+      },
+      "battery_power": {
+        "name": "Battery Power"
+      },
+      "today_battery_charge": {
+        "name": "Today Battery Charge"
+      },
+      "today_battery_discharge": {
+        "name": "Today Battery Discharge"
+      },
+      "series_pv": {
+        "name": "PV Series"
+      },
+      "series_load": {
+        "name": "Load Series"
+      },
+      "series_battery_charge": {
+        "name": "Battery Charge Series"
+      },
+      "series_battery_discharge": {
+        "name": "Battery Discharge Series"
+      },
+      "series_grid_import": {
+        "name": "Grid Import Series"
+      },
+      "series_soc_forecast": {
+        "name": "SOC Forecast Series"
+      }
+    },
+    "switch": {
+      "charging_control": {
+        "name": "Charging Control"
+      }
+    }
+  }
+}

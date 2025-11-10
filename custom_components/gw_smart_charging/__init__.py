@@ -23,11 +23,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # local imports to avoid startup side-effects
     from .coordinator import GWSmartCoordinator
     from .services import async_setup_services
+    from .view import GWSmartChargingDashboardView
 
     coordinator = GWSmartCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
+
+    # Register dashboard view
+    hass.http.register_view(GWSmartChargingDashboardView(hass))
 
     # Forward setup for platforms (use correct HA API)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

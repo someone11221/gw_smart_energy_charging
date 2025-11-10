@@ -139,6 +139,10 @@ class GWSmartCoordinator(DataUpdateCoordinator):
             # Compute 15-min optimized schedule
             schedule = self._compute_schedule_15min(forecast_15min, price_15min, load_15min)
 
+            # Get real-time battery and grid metrics (with W to kWh conversion)
+            battery_metrics = self._get_battery_metrics()
+            grid_metrics = self._get_grid_metrics()
+
             # Execute charging automation if enabled
             await self._execute_charging_automation(schedule)
 
@@ -149,6 +153,8 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                 "load_15min": load_15min,
                 "schedule": schedule,
                 "timestamps": forecast_timestamps,
+                "battery_metrics": battery_metrics,
+                "grid_metrics": grid_metrics,
                 **forecast_meta,
                 "last_update": datetime.now(timezone.utc).isoformat(),
             }
@@ -1028,3 +1034,128 @@ class GWSmartCoordinator(DataUpdateCoordinator):
             })
 
         return schedule
+
+    def _get_battery_metrics(self) -> Dict[str, Any]:
+        """Get real-time battery metrics with W to kWh conversion.
+        
+        Returns battery power, state of charge, and today's charge/discharge.
+        Note: battery_power is positive when discharging, negative when charging.
+        """
+        battery_power_sensor = self.config.get(CONF_BATTERY_POWER_SENSOR)
+        soc_sensor = self.config.get(CONF_SOC_SENSOR)
+        
+        from .const import CONF_TODAY_BATTERY_CHARGE_SENSOR, CONF_TODAY_BATTERY_DISCHARGE_SENSOR
+        today_charge_sensor = self.config.get(CONF_TODAY_BATTERY_CHARGE_SENSOR)
+        today_discharge_sensor = self.config.get(CONF_TODAY_BATTERY_DISCHARGE_SENSOR)
+        
+        metrics = {
+            "battery_power_w": 0.0,
+            "battery_power_kw": 0.0,
+            "battery_status": "idle",
+            "soc_pct": 0.0,
+            "soc_kwh": 0.0,
+            "today_charge_kwh": 0.0,
+            "today_discharge_kwh": 0.0,
+        }
+        
+        # Get battery power (W) - positive = discharge, negative = charge
+        if battery_power_sensor:
+            state = self.hass.states.get(battery_power_sensor)
+            if state:
+                try:
+                    power_w = float(state.state)
+                    metrics["battery_power_w"] = power_w
+                    metrics["battery_power_kw"] = round(power_w / 1000.0, 3)
+                    if power_w > 10:
+                        metrics["battery_status"] = "discharging"
+                    elif power_w < -10:
+                        metrics["battery_status"] = "charging"
+                    else:
+                        metrics["battery_status"] = "idle"
+                except (ValueError, TypeError):
+                    pass
+        
+        # Get SOC (%)
+        if soc_sensor:
+            state = self.hass.states.get(soc_sensor)
+            if state:
+                try:
+                    soc_pct = float(state.state)
+                    metrics["soc_pct"] = soc_pct
+                    # Calculate kWh from percentage
+                    capacity = float(self.config.get(CONF_BATTERY_CAPACITY, DEFAULT_BATTERY_CAPACITY))
+                    metrics["soc_kwh"] = round((soc_pct / 100.0) * capacity, 3)
+                except (ValueError, TypeError):
+                    pass
+        
+        # Get today's charge (kWh)
+        if today_charge_sensor:
+            state = self.hass.states.get(today_charge_sensor)
+            if state:
+                try:
+                    metrics["today_charge_kwh"] = round(float(state.state), 3)
+                except (ValueError, TypeError):
+                    pass
+        
+        # Get today's discharge (kWh)
+        if today_discharge_sensor:
+            state = self.hass.states.get(today_discharge_sensor)
+            if state:
+                try:
+                    metrics["today_discharge_kwh"] = round(float(state.state), 3)
+                except (ValueError, TypeError):
+                    pass
+        
+        return metrics
+    
+    def _get_grid_metrics(self) -> Dict[str, Any]:
+        """Get real-time grid import metrics with W to kWh conversion."""
+        grid_import_sensor = self.config.get(CONF_GRID_IMPORT_SENSOR)
+        load_sensor = self.config.get(CONF_LOAD_SENSOR)
+        
+        from .const import CONF_PV_POWER_SENSOR
+        pv_power_sensor = self.config.get(CONF_PV_POWER_SENSOR)
+        
+        metrics = {
+            "grid_import_w": 0.0,
+            "grid_import_kw": 0.0,
+            "house_load_w": 0.0,
+            "house_load_kw": 0.0,
+            "pv_power_w": 0.0,
+            "pv_power_kw": 0.0,
+        }
+        
+        # Get grid import (W)
+        if grid_import_sensor:
+            state = self.hass.states.get(grid_import_sensor)
+            if state:
+                try:
+                    import_w = float(state.state)
+                    metrics["grid_import_w"] = import_w
+                    metrics["grid_import_kw"] = round(import_w / 1000.0, 3)
+                except (ValueError, TypeError):
+                    pass
+        
+        # Get house load (W)
+        if load_sensor:
+            state = self.hass.states.get(load_sensor)
+            if state:
+                try:
+                    load_w = float(state.state)
+                    metrics["house_load_w"] = load_w
+                    metrics["house_load_kw"] = round(load_w / 1000.0, 3)
+                except (ValueError, TypeError):
+                    pass
+        
+        # Get PV power (W)
+        if pv_power_sensor:
+            state = self.hass.states.get(pv_power_sensor)
+            if state:
+                try:
+                    pv_w = float(state.state)
+                    metrics["pv_power_w"] = pv_w
+                    metrics["pv_power_kw"] = round(pv_w / 1000.0, 3)
+                except (ValueError, TypeError):
+                    pass
+        
+        return metrics
