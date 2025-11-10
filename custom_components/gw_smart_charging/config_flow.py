@@ -40,11 +40,17 @@ from .const import (
     CONF_SWITCH_ON_MEANS_CHARGE,
     CONF_TEST_MODE,
     CONF_CHARGING_STRATEGY,
+    CONF_LANGUAGE,
+    CONF_FULL_HOUR_CHARGING,
     STRATEGY_DYNAMIC,
     STRATEGY_4_LOWEST,
     STRATEGY_6_LOWEST,
     STRATEGY_NANOGREEN_ONLY,
     STRATEGY_PRICE_THRESHOLD,
+    STRATEGY_ADAPTIVE_SMART,
+    STRATEGY_SOLAR_PRIORITY,
+    STRATEGY_PEAK_SHAVING,
+    STRATEGY_TOU_OPTIMIZED,
     DEFAULT_BATTERY_CAPACITY,
     DEFAULT_MAX_CHARGE_POWER,
     DEFAULT_CHARGE_EFFICIENCY,
@@ -60,6 +66,10 @@ from .const import (
     DEFAULT_ENABLE_ML_PREDICTION,
     DEFAULT_SWITCH_PRICE_THRESHOLD,
     DEFAULT_CHARGING_STRATEGY,
+    DEFAULT_LANGUAGE,
+    DEFAULT_FULL_HOUR_CHARGING,
+    LANGUAGE_CS,
+    LANGUAGE_EN,
 )
 
 
@@ -112,7 +122,13 @@ class GWSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     STRATEGY_6_LOWEST,
                     STRATEGY_NANOGREEN_ONLY,
                     STRATEGY_PRICE_THRESHOLD,
+                    STRATEGY_ADAPTIVE_SMART,
+                    STRATEGY_SOLAR_PRIORITY,
+                    STRATEGY_PEAK_SHAVING,
+                    STRATEGY_TOU_OPTIMIZED,
                 ]),
+                vol.Optional(CONF_LANGUAGE, default=DEFAULT_LANGUAGE): vol.In([LANGUAGE_CS, LANGUAGE_EN]),
+                vol.Optional(CONF_FULL_HOUR_CHARGING, default=DEFAULT_FULL_HOUR_CHARGING): bool,
                 vol.Optional(CONF_ENABLE_ML_PREDICTION, default=DEFAULT_ENABLE_ML_PREDICTION): bool,
                 vol.Optional(CONF_ENABLE_AUTOMATION, default=True): bool,
                 vol.Optional(CONF_SWITCH_ON_MEANS_CHARGE, default=True): bool,
@@ -272,7 +288,19 @@ class GWSmartOptionsFlow(config_entries.OptionsFlow):
                     STRATEGY_6_LOWEST,
                     STRATEGY_NANOGREEN_ONLY,
                     STRATEGY_PRICE_THRESHOLD,
+                    STRATEGY_ADAPTIVE_SMART,
+                    STRATEGY_SOLAR_PRIORITY,
+                    STRATEGY_PEAK_SHAVING,
+                    STRATEGY_TOU_OPTIMIZED,
                 ]),
+                vol.Optional(
+                    CONF_LANGUAGE,
+                    default=current_config.get(CONF_LANGUAGE, DEFAULT_LANGUAGE)
+                ): vol.In([LANGUAGE_CS, LANGUAGE_EN]),
+                vol.Optional(
+                    CONF_FULL_HOUR_CHARGING,
+                    default=current_config.get(CONF_FULL_HOUR_CHARGING, DEFAULT_FULL_HOUR_CHARGING)
+                ): bool,
                 vol.Optional(
                     CONF_ENABLE_ML_PREDICTION, 
                     default=current_config.get(CONF_ENABLE_ML_PREDICTION, DEFAULT_ENABLE_ML_PREDICTION)
