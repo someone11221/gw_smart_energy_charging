@@ -16,6 +16,8 @@ CONF_PV_POWER_SENSOR = "pv_power_sensor"
 CONF_SOC_SENSOR = "soc_sensor"
 CONF_BATTERY_POWER_SENSOR = "battery_power_sensor"
 CONF_GRID_IMPORT_SENSOR = "grid_import_sensor"
+CONF_TODAY_BATTERY_CHARGE_SENSOR = "today_battery_charge_sensor"
+CONF_TODAY_BATTERY_DISCHARGE_SENSOR = "today_battery_discharge_sensor"
 
 # Battery configuration
 CONF_BATTERY_CAPACITY = "battery_capacity_kwh"

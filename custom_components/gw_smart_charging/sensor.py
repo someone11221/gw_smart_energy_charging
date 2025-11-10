@@ -26,6 +26,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         GWSmartScheduleSensor(coordinator, entry.entry_id),
         GWSmartSOCSensor(coordinator, entry.entry_id),
         GWSmartDiagnosticsSensor(coordinator, entry.entry_id),  # New diagnostics sensor
+        GWSmartBatteryPowerSensor(coordinator, entry.entry_id),  # Real-time battery power
+        GWSmartTodayChargeSensor(coordinator, entry.entry_id),  # Today's charge (kWh)
+        GWSmartTodayDischargeSensor(coordinator, entry.entry_id),  # Today's discharge (kWh)
         # series sensors for Lovelace plotting (15-min resolution)
         GWSmartSeriesSensor(coordinator, entry.entry_id, "pv"),
         GWSmartSeriesSensor(coordinator, entry.entry_id, "load"),
@@ -274,6 +277,10 @@ class GWSmartDiagnosticsSensor(CoordinatorEntity, SensorEntity):
                 next_charge_slot = schedule[i]
                 break
         
+        # Get battery and grid metrics
+        battery_metrics = data.get("battery_metrics", {})
+        grid_metrics = data.get("grid_metrics", {})
+        
         return {
             "last_update": data.get("last_update", "never"),
             "update_interval_minutes": 2,
@@ -295,6 +302,21 @@ class GWSmartDiagnosticsSensor(CoordinatorEntity, SensorEntity):
             "next_charge_price": next_charge_slot.get("price_czk_kwh", 0.0) if next_charge_slot else 0.0,
             "forecast_confidence": data.get("forecast_confidence", {}),
             "forecast_source": data.get("forecast_source", "unknown"),
+            # Real-time battery metrics
+            "battery_power_w": battery_metrics.get("battery_power_w", 0.0),
+            "battery_power_kw": battery_metrics.get("battery_power_kw", 0.0),
+            "battery_status": battery_metrics.get("battery_status", "unknown"),
+            "battery_soc_pct": battery_metrics.get("soc_pct", 0.0),
+            "battery_soc_kwh": battery_metrics.get("soc_kwh", 0.0),
+            "today_battery_charge_kwh": battery_metrics.get("today_charge_kwh", 0.0),
+            "today_battery_discharge_kwh": battery_metrics.get("today_discharge_kwh", 0.0),
+            # Real-time grid metrics
+            "grid_import_w": grid_metrics.get("grid_import_w", 0.0),
+            "grid_import_kw": grid_metrics.get("grid_import_kw", 0.0),
+            "house_load_w": grid_metrics.get("house_load_w", 0.0),
+            "house_load_kw": grid_metrics.get("house_load_kw", 0.0),
+            "pv_power_w": grid_metrics.get("pv_power_w", 0.0),
+            "pv_power_kw": grid_metrics.get("pv_power_kw", 0.0),
         }
 
 
@@ -420,3 +442,98 @@ class GWSmartSeriesSensor(CoordinatorEntity, SensorEntity):
             arr = self._build_series_from_fallback(data)
         timestamps = self._build_timestamps(data)
         return {"data_15min": arr, "timestamps": timestamps}
+
+
+class GWSmartBatteryPowerSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing current battery power (W, positive=discharging, negative=charging)."""
+
+    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._attr_name = f"{DEFAULT_NAME} Battery Power"
+        self._attr_unique_id = f"{entry_id}_battery_power"
+        self._attr_unit_of_measurement = "W"
+        self._attr_device_class = "power"
+        self._attr_state_class = "measurement"
+
+    @property
+    def native_value(self) -> float:
+        """Return current battery power in watts."""
+        from .const import CONF_BATTERY_POWER_SENSOR
+        battery_power_sensor = self.coordinator.config.get(CONF_BATTERY_POWER_SENSOR)
+        if battery_power_sensor:
+            state = self.coordinator.hass.states.get(battery_power_sensor)
+            if state:
+                try:
+                    # Per requirements: positive when discharging, negative when charging
+                    return float(state.state)
+                except (ValueError, TypeError):
+                    return 0.0
+        return 0.0
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes."""
+        power_w = self.native_value
+        power_kw = power_w / 1000.0
+        status = "discharging" if power_w > 0 else "charging" if power_w < 0 else "idle"
+        return {
+            "power_kw": round(power_kw, 3),
+            "status": status,
+            "abs_power_w": abs(power_w),
+            "abs_power_kw": round(abs(power_kw), 3),
+        }
+
+
+class GWSmartTodayChargeSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing today's total battery charge in kWh."""
+
+    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._attr_name = f"{DEFAULT_NAME} Today Battery Charge"
+        self._attr_unique_id = f"{entry_id}_today_battery_charge"
+        self._attr_unit_of_measurement = "kWh"
+        self._attr_device_class = "energy"
+        self._attr_state_class = "total_increasing"
+
+    @property
+    def native_value(self) -> float:
+        """Return today's battery charge in kWh."""
+        from .const import CONF_TODAY_BATTERY_CHARGE_SENSOR
+        charge_sensor = self.coordinator.config.get(CONF_TODAY_BATTERY_CHARGE_SENSOR)
+        if charge_sensor:
+            state = self.coordinator.hass.states.get(charge_sensor)
+            if state:
+                try:
+                    return round(float(state.state), 3)
+                except (ValueError, TypeError):
+                    return 0.0
+        return 0.0
+
+
+class GWSmartTodayDischargeSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing today's total battery discharge in kWh."""
+
+    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._attr_name = f"{DEFAULT_NAME} Today Battery Discharge"
+        self._attr_unique_id = f"{entry_id}_today_battery_discharge"
+        self._attr_unit_of_measurement = "kWh"
+        self._attr_device_class = "energy"
+        self._attr_state_class = "total_increasing"
+
+    @property
+    def native_value(self) -> float:
+        """Return today's battery discharge in kWh."""
+        from .const import CONF_TODAY_BATTERY_DISCHARGE_SENSOR
+        discharge_sensor = self.coordinator.config.get(CONF_TODAY_BATTERY_DISCHARGE_SENSOR)
+        if discharge_sensor:
+            state = self.coordinator.hass.states.get(discharge_sensor)
+            if state:
+                try:
+                    return round(float(state.state), 3)
+                except (ValueError, TypeError):
+                    return 0.0
+        return 0.0
