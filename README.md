@@ -1,8 +1,19 @@
 # GW Smart Charging
 
-Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 1.9.5** - Optimální výběr času nabíjení, ovládací panel, 24h predikce.
+Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 2.0.0** - Nanogreen integrace, pokročilé ML vzory, řízení přídavných spínačů.
 
 ## Funkce
+
+### 🆕 Nové ve v2.0.0
+
+🎛️ **Nanogreen integrace** - Automatické nabíjení během 5 nejlevnějších hodin z `sensor.is_currently_in_five_cheapest_hours`  
+🧠 **Pokročilé ML vzory** - Samostatné predikce pro pracovní dny, víkendy a svátky  
+🔌 **Řízení přídavných spínačů** - Automatické zapínání/vypínání spínačů podle ceny elektřiny  
+🧪 **Testovací režim** - Bezpečné testování a ladění bez skutečného ovládání  
+🌍 **Detekce svátků** - Rozpoznání českých svátků pro lepší predikce  
+🐛 **Oprava dashboardu** - Vyřešen error 500 při zobrazení dashboardu
+
+### Základní funkce
 
 ✨ **Automatické autonomní řízení** - Aktivní ovládání nabíjení každé 2 minuty bez zásahu uživatele  
 🎯 **15minutová optimalizace** - Přesné řízení v 96 intervalech/den  
@@ -23,12 +34,12 @@ Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie Goo
 💸 **Savings tracking** - Úspory oproti pausálnímu tarifu  
 📱 **Device Panel** - Kompletní integrace v Zařízení a Služby  
 🎨 **Zjednodušené entity** - Pouze 9 základních senzorů + 1 switch  
-🎴 **Custom Lovelace Card** - Profesionální karta s kompaktním přehledem a 24h predikcí (v1.9.5)  
-⚙️ **Options Flow** - Rekonfigurace bez reinstalace (v1.9.0)  
-🔲 **Panel v postranní liště** - Přímý přístup k dashboardu (v1.9.0)  
-🧠 **Optimální nabíjení** - Čeká na nejlevnější hodinu při klesající ceně (v1.9.5)  
-🎛️ **Ovládací panel** - Aktivace/deaktivace a konfigurace z dashboardu (v1.9.5)  
-🔮 **24h predikce** - Vizualizace plánu nabíjení/vybíjení na další den (v1.9.5)  
+🎴 **Custom Lovelace Card** - Profesionální karta s kompaktním přehledem a 24h predikcí  
+⚙️ **Options Flow** - Rekonfigurace bez reinstalace  
+🔲 **Panel v postranní liště** - Přímý přístup k dashboardu  
+🧠 **Optimální nabíjení** - Čeká na nejlevnější hodinu při klesající ceně  
+🎛️ **Ovládací panel** - Aktivace/deaktivace a konfigurace z dashboardu  
+🔮 **24h predikce** - Vizualizace plánu nabíjení/vybíjení na další den  
 
 ## Instalace
 
@@ -52,8 +63,28 @@ Integrace podporuje následující senzory:
 - `sensor.today_battery_charge` - Kolik kWh bylo dnes do baterie uloženo
 - `sensor.today_battery_discharge` - Kolik kWh bylo dnes z baterie odebráno
 - `sensor.pv_power` - Aktuální výroba solárních panelů (W) → automaticky převedeno na kWh
+- `sensor.is_currently_in_five_cheapest_hours` - **NOVÉ v2.0** Nanogreen senzor nejlevnějších hodin (volitelné)
 - `script.nabijeni_on` - Script pro zapnutí nabíjení
 - `script.nabijeni_off` - Script pro vypnutí nabíjení
+
+### Nové v2.0: Přídavné spínače
+
+Můžete přidat libovolné spínače z Home Assistantu, které se budou automaticky zapínat/vypínat podle ceny elektřiny:
+
+**Příklad konfigurace:**
+- Additional Switches: `switch.bojler,switch.cerpadlo,switch.nabijeni_ev`
+- Switch Price Threshold: `2.0` CZK/kWh
+
+**Jak to funguje:**
+- Když cena elektřiny klesne pod 2.0 CZK/kWh → zapne bojler, čerpadlo, EV nabíjení
+- Když cena elektřiny stoupne nad 2.0 CZK/kWh → vypne bojler, čerpadlo, EV nabíjení
+
+**Vhodné použití:**
+- Elektrické bojlery
+- Bazénová čerpadla
+- Nabíječky elektromobilů
+- Pračky, myčky
+- Jakékoliv energeticky náročné spotřebiče
 
 **Důležité:** Všechny výkonové senzory (W) jsou automaticky převáděny na kWh pro správnou logiku integrace.
 
@@ -226,6 +257,50 @@ Integrace se nyní zobrazuje v panelu Zařízení a Služby:
 - **RELEASE_NOTES_v1.8.0.md** - Detailní release notes s migrační příručkou
 
 ## Release Notes
+
+### v2.0.0 (Major Feature Release - November 2024)
+
+#### 🆕 Nové funkce
+
+**Nanogreen Integrace**
+- Podpora pro `sensor.is_currently_in_five_cheapest_hours`
+- Automatické nabíjení během 5 nejlevnějších hodin
+- Inteligentní fallback na standardní logiku
+
+**Pokročilé ML Vzory**
+- Samostatné predikce pro pracovní dny (Po-Pá)
+- Samostatné predikce pro víkendy (So-Ne)
+- Samostatné predikce pro svátky
+- Detekce českých svátků (11 hlavních svátků)
+- Udržování 30denní historie pro každý typ dne
+
+**Řízení Přídavných Spínačů**
+- Podpora pro libovolné spínače z Home Assistantu
+- Automatické zapínání/vypínání podle ceny elektřiny
+- Konfigurovatelný cenový práh
+- Nezávislé sledování stavu pro každý spínač
+- Ideální pro bojlery, čerpadla, EV nabíječky
+
+**Testovací Režim**
+- Bezpečné testování bez skutečného ovládání
+- Detailní logování plánovaných akcí
+- Konfigurovatelné přes UI
+- Vhodné pro ladění a testování nových konfigurací
+
+#### 🐛 Opravy
+- **Dashboard Error 500** - Opraven chybějící import `aiohttp.web` ve view.py
+- Response třída nyní správně importována
+
+#### 📝 Dokumentace
+- **RELEASE_NOTES_v2.0.0.md** - Kompletní release notes s příklady
+- **README.md** - Aktualizováno o nové funkce v2.0
+
+#### 🔄 Migrace
+- **Žádné breaking changes** - Plně zpětně kompatibilní s v1.9.5
+- Všechny nové funkce volitelné
+- Rekonfigurace přes Options Flow
+
+Více informací v `RELEASE_NOTES_v2.0.0.md`.
 
 ### v1.8.0 (Entity Consolidation & Device Integration Release)
 
