@@ -39,6 +39,12 @@ from .const import (
     CONF_ENABLE_AUTOMATION,
     CONF_SWITCH_ON_MEANS_CHARGE,
     CONF_TEST_MODE,
+    CONF_CHARGING_STRATEGY,
+    STRATEGY_DYNAMIC,
+    STRATEGY_4_LOWEST,
+    STRATEGY_6_LOWEST,
+    STRATEGY_NANOGREEN_ONLY,
+    STRATEGY_PRICE_THRESHOLD,
     DEFAULT_BATTERY_CAPACITY,
     DEFAULT_MAX_CHARGE_POWER,
     DEFAULT_CHARGE_EFFICIENCY,
@@ -53,6 +59,7 @@ from .const import (
     DEFAULT_CRITICAL_HOURS_SOC,
     DEFAULT_ENABLE_ML_PREDICTION,
     DEFAULT_SWITCH_PRICE_THRESHOLD,
+    DEFAULT_CHARGING_STRATEGY,
 )
 
 
@@ -99,6 +106,13 @@ class GWSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_CRITICAL_HOURS_START, default=DEFAULT_CRITICAL_HOURS_START): vol.Coerce(int),
                 vol.Optional(CONF_CRITICAL_HOURS_END, default=DEFAULT_CRITICAL_HOURS_END): vol.Coerce(int),
                 vol.Optional(CONF_CRITICAL_HOURS_SOC, default=DEFAULT_CRITICAL_HOURS_SOC): vol.Coerce(float),
+                vol.Optional(CONF_CHARGING_STRATEGY, default=DEFAULT_CHARGING_STRATEGY): vol.In([
+                    STRATEGY_DYNAMIC,
+                    STRATEGY_4_LOWEST,
+                    STRATEGY_6_LOWEST,
+                    STRATEGY_NANOGREEN_ONLY,
+                    STRATEGY_PRICE_THRESHOLD,
+                ]),
                 vol.Optional(CONF_ENABLE_ML_PREDICTION, default=DEFAULT_ENABLE_ML_PREDICTION): bool,
                 vol.Optional(CONF_ENABLE_AUTOMATION, default=True): bool,
                 vol.Optional(CONF_SWITCH_ON_MEANS_CHARGE, default=True): bool,
@@ -249,6 +263,16 @@ class GWSmartOptionsFlow(config_entries.OptionsFlow):
                     CONF_CRITICAL_HOURS_SOC, 
                     default=current_config.get(CONF_CRITICAL_HOURS_SOC, DEFAULT_CRITICAL_HOURS_SOC)
                 ): vol.Coerce(float),
+                vol.Optional(
+                    CONF_CHARGING_STRATEGY,
+                    default=current_config.get(CONF_CHARGING_STRATEGY, DEFAULT_CHARGING_STRATEGY)
+                ): vol.In([
+                    STRATEGY_DYNAMIC,
+                    STRATEGY_4_LOWEST,
+                    STRATEGY_6_LOWEST,
+                    STRATEGY_NANOGREEN_ONLY,
+                    STRATEGY_PRICE_THRESHOLD,
+                ]),
                 vol.Optional(
                     CONF_ENABLE_ML_PREDICTION, 
                     default=current_config.get(CONF_ENABLE_ML_PREDICTION, DEFAULT_ENABLE_ML_PREDICTION)

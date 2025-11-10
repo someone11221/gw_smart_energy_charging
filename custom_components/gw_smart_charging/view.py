@@ -389,7 +389,7 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                     <h1>
                         <span class="icon">🔋</span>
                         GW Smart Charging
-                        <span class="version">v2.0.0</span>
+                        <span class="version">v2.1.0</span>
                     </h1>
                     <p>Advanced battery charging optimization for Home Assistant</p>
                 </div>
@@ -571,7 +571,7 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                 </div>
                 
                 <div class="footer">
-                    <p>GW Smart Charging v2.0.0 | © 2024 | Created for Home Assistant</p>
+                    <p>GW Smart Charging v2.1.0 | © 2024 | Created for Home Assistant</p>
                     <p style="margin-top: 10px;">For documentation and support, visit <a href="https://github.com/someone11221/gw_smart_energy_charging" style="color: white; text-decoration: underline;">GitHub Repository</a></p>
                 </div>
             </div>

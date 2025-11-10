@@ -47,6 +47,14 @@ CONF_ENABLE_ML_PREDICTION = "enable_ml_prediction"
 CONF_ENABLE_AUTOMATION = "enable_automation"
 CONF_SWITCH_ON_MEANS_CHARGE = "switch_on_means_charge"
 CONF_TEST_MODE = "test_mode"
+CONF_CHARGING_STRATEGY = "charging_strategy"
+
+# Charging strategies
+STRATEGY_DYNAMIC = "dynamic"  # Smart optimization based on prices and forecasts (default)
+STRATEGY_4_LOWEST = "4_lowest_hours"  # Always charge in 4 lowest priced hours
+STRATEGY_6_LOWEST = "6_lowest_hours"  # Always charge in 6 lowest priced hours
+STRATEGY_NANOGREEN_ONLY = "nanogreen_only"  # Use only Nanogreen sensor
+STRATEGY_PRICE_THRESHOLD = "price_threshold"  # Charge whenever below always_charge_price
 
 # Default values
 DEFAULT_BATTERY_CAPACITY = 17.0
@@ -63,3 +71,4 @@ DEFAULT_CRITICAL_HOURS_END = 21  # 21:00
 DEFAULT_CRITICAL_HOURS_SOC = 80.0  # 80%
 DEFAULT_ENABLE_ML_PREDICTION = False
 DEFAULT_SWITCH_PRICE_THRESHOLD = 2.0  # CZK/kWh - threshold for turning on additional switches
+DEFAULT_CHARGING_STRATEGY = STRATEGY_DYNAMIC  # Default to dynamic optimization

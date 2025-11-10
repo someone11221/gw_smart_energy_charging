@@ -1,7 +1,7 @@
 /**
  * GW Smart Charging Card
  * Custom Lovelace card for GW Smart Charging integration
- * Version: 1.9.5 - Enhanced with 24h prediction timeline
+ * Version: 2.1.0 - Enhanced dashboard, improved charging logic, multi-language support
  */
 
 class GWSmartChargingCard extends HTMLElement {
@@ -429,7 +429,7 @@ window.customCards.push({
 });
 
 console.info(
-  '%c  GW-SMART-CHARGING-CARD  %c Version 1.9.5 ',
+  '%c  GW-SMART-CHARGING-CARD  %c Version 2.1.0 ',
   'color: white; background: #764ba2; font-weight: 700;',
   'color: #764ba2; background: white; font-weight: 700;'
 );
