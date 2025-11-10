@@ -1,7 +1,7 @@
 {
   "domain": "gw_smart_charging",
   "name": "GW Smart Charging",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "documentation": "https://github.com/someone11221/gw_smart_energy_charging",
   "requirements": [],
   "dependencies": ["goodwe"],

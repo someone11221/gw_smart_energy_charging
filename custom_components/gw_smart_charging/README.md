@@ -25,10 +25,12 @@ Pokročilá integrace pro optimalizaci nabíjení baterie GoodWe s využitím so
 
 Integration vytváří následující senzory:
 
+- **GW Smart Charging Forecast Status** - Stav integrace
 - **GW Smart Charging Forecast** - Solární forecast (15min data)
 - **GW Smart Charging Price** - Ceny elektřiny (15min data)
 - **GW Smart Charging Schedule** - Aktuální režim a plán nabíjení
 - **GW Smart Charging SOC Forecast** - Predikce stavu baterie
+- **GW Smart Charging Diagnostics** - 🆕 Kompletní diagnostika a stav integrace
 - **GW Smart Charging Auto Charging** (switch) - Ovládání automatického nabíjení
 - **Series senzory** (pro grafy):
   - Series pv - Solární výroba
@@ -83,8 +85,24 @@ Integration vytváří následující senzory:
 - **enable_ml_prediction**: Zapnout ML predikci spotřeby - výchozí false
 
 ### Automatizace
-- **enable_automation**: Povolit automatické ovládání switche
+- **enable_automation**: Povolit automatické ovládání skriptů nabíjení - výchozí true
 - **switch_on_means_charge**: Switch ON = nabíjení
+
+**Jak funguje automatizace (v1.4.0):**
+1. Integrace se aktualizuje každé 2 minuty
+2. Vyhodnotí aktuální 15min slot a rozhodne, zda nabíjet
+3. Pokud se stav změnil, zavolá příslušný script:
+   - `script.nabijeni_on` - zapnutí nabíjení
+   - `script.nabijeni_off` - vypnutí nabíjení
+4. Skripty se volají pouze při změně stavu (ne opakovaně)
+5. Veškeré akce jsou logovány pro diagnostiku
+
+**Diagnostický senzor:**
+- Zobrazuje aktuální stav automatizace
+- Informace o poslední akci skriptu
+- Distribuci režimů v plánu
+- Čas příštího nabíjení
+- Konfiguraci senzorů a skriptů
 
 ## Rekonfigurace
 
