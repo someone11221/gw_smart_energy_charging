@@ -1,7 +1,7 @@
 /**
  * GW Smart Charging Card
  * Custom Lovelace card for GW Smart Charging integration
- * Version: 1.9.0
+ * Version: 1.9.5 - Enhanced with 24h prediction timeline
  */
 
 class GWSmartChargingCard extends HTMLElement {
@@ -204,6 +204,54 @@ class GWSmartChargingCard extends HTMLElement {
         .switch-label {
           font-weight: 500;
         }
+        
+        /* NEW v1.9.5: Prediction Timeline */
+        .prediction-section {
+          margin-top: 16px;
+          padding-top: 16px;
+          border-top: 1px solid var(--divider-color);
+        }
+        .prediction-title {
+          font-size: 14px;
+          font-weight: 600;
+          margin-bottom: 12px;
+          color: var(--primary-text-color);
+        }
+        .timeline-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 8px;
+          margin-bottom: 6px;
+          background: var(--secondary-background-color);
+          border-radius: 6px;
+          border-left: 3px solid var(--divider-color);
+        }
+        .timeline-time {
+          font-weight: 600;
+          min-width: 60px;
+          font-size: 13px;
+        }
+        .timeline-action {
+          flex: 1;
+          font-size: 13px;
+        }
+        .timeline-soc {
+          font-size: 12px;
+          color: var(--secondary-text-color);
+        }
+        .action-charge {
+          color: #4caf50;
+          font-weight: 600;
+        }
+        .action-solar {
+          color: #ff9800;
+          font-weight: 600;
+        }
+        .action-discharge {
+          color: #f44336;
+          font-weight: 600;
+        }
       </style>
 
       <ha-card>
@@ -282,7 +330,78 @@ class GWSmartChargingCard extends HTMLElement {
             ></ha-switch>
           </div>
         ` : ''}
+        
+        ${this._renderPredictionTimeline(scheduleEntity)}
       </ha-card>
+    `;
+  }
+
+  _renderPredictionTimeline(scheduleEntity) {
+    if (!scheduleEntity || !scheduleEntity.attributes || !scheduleEntity.attributes.schedule) {
+      return `
+        <div class="prediction-section">
+          <div class="prediction-title">📅 24h Prediction</div>
+          <div style="color: var(--secondary-text-color); font-size: 13px;">No schedule data available</div>
+        </div>
+      `;
+    }
+
+    const schedule = scheduleEntity.attributes.schedule;
+    let timelineHtml = '';
+    let lastMode = null;
+    let significantEvents = 0;
+    
+    // Extract significant events (mode changes, only show first 8)
+    schedule.forEach((slot, idx) => {
+      if (significantEvents >= 8) return;
+      
+      const mode = slot.mode || 'idle';
+      const time = slot.time || '';
+      const soc = slot.soc_pct_end || 0;
+      
+      // Only show significant mode changes
+      if (mode !== lastMode && mode !== 'idle' && mode !== 'self_consume') {
+        let actionClass = '';
+        let actionIcon = '';
+        let actionText = '';
+        
+        if (mode.includes('solar_charge')) {
+          actionClass = 'action-solar';
+          actionIcon = '🌞';
+          actionText = 'Solar Charging';
+        } else if (mode.includes('grid_charge')) {
+          actionClass = 'action-charge';
+          actionIcon = '⚡';
+          actionText = 'Grid Charging';
+        } else if (mode.includes('discharge')) {
+          actionClass = 'action-discharge';
+          actionIcon = '🔋';
+          actionText = 'Battery Discharge';
+        }
+        
+        if (actionText) {
+          timelineHtml += `
+            <div class="timeline-item">
+              <div class="timeline-time">${time}</div>
+              <div class="timeline-action ${actionClass}">${actionIcon} ${actionText}</div>
+              <div class="timeline-soc">→ ${soc.toFixed(0)}%</div>
+            </div>
+          `;
+          significantEvents++;
+        }
+        lastMode = mode;
+      }
+    });
+    
+    if (!timelineHtml) {
+      timelineHtml = '<div style="color: var(--secondary-text-color); font-size: 13px;">No significant actions planned</div>';
+    }
+    
+    return `
+      <div class="prediction-section">
+        <div class="prediction-title">📅 Next 24h Plan (updates every 15min)</div>
+        ${timelineHtml}
+      </div>
     `;
   }
 
@@ -310,7 +429,7 @@ window.customCards.push({
 });
 
 console.info(
-  '%c  GW-SMART-CHARGING-CARD  %c Version 1.9.0 ',
+  '%c  GW-SMART-CHARGING-CARD  %c Version 1.9.5 ',
   'color: white; background: #764ba2; font-weight: 700;',
   'color: #764ba2; background: white; font-weight: 700;'
 );
