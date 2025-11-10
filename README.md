@@ -1,17 +1,19 @@
 # GW Smart Charging
 
-Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 1.3.0** - production ready s hysterezí, ML predikcí a critical hours.
+Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 1.4.0** - automatické řízení nabíjení každé 2 minuty s real-time reakcí na změny.
 
 ## Funkce
 
-✨ **15minutová optimalizace** - Přesné řízení v 96 intervalech/den  
+✨ **Automatické řízení** - Aktivní ovládání nabíjení každé 2 minuty  
+🎯 **15minutová optimalizace** - Přesné řízení v 96 intervalech/den  
 🌞 **Inteligentní self-consumption** - Priorita využití solárního přebytku  
 💰 **Cenové prahové hodnoty** - Always/Never charge prahy s hysterezí  
 🔋 **SOC limity** - Min/Max/Target pro ochranu baterie  
 📊 **ML Predikce spotřeby** - Učení z historických dat (30 dní)  
 ⚡ **Critical Hours** - Vyšší SOC během peak hours  
-🤖 **Automatické ovládání** - Switch pro řízení podle plánu  
+🤖 **Script automation** - Automatické volání script.nabijeni_on/off  
 📈 **Real-time monitoring** - Battery power & grid import  
+🔍 **Diagnostika** - Kompletní přehled stavu a logiky integrace  
 
 ## Instalace
 
@@ -41,6 +43,15 @@ Parametry včetně cenových prahů, SOC limitů, hystereze a critical hours lze
 Detailní dokumentace je v `/custom_components/gw_smart_charging/README.md`
 
 ## Release Notes
+
+### v1.4.0 (Active Automation Release)
+- ✅ **Automatické řízení** - Integrace aktivně volá script.nabijeni_on/off každé 2 minuty
+- 🔄 **Vyšší frekvence aktualizací** - Update interval snížen z 5 na 2 minuty pro rychlejší reakci
+- 🎯 **Chytrá optimalizace** - Skripty se volají pouze při změně stavu (prevence zbytečných volání)
+- 🔍 **Nový diagnostický senzor** - Kompletní přehled stavu, konfigurace a logiky integrace
+- 📊 **Vylepšená data pro ApexCharts** - Optimalizovaný formát atributů pro grafování
+- 📋 **Detailní logování** - Přesné informace o volání skriptů a režimech nabíjení
+- 🔧 **Stabilní konfigurace** - Všechny senzory a skripty správně propojené
 
 ### v1.3.0 (Production Release)
 - ✅ **Production Ready** - Kompletně otestovaná a stabilní verze

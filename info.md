@@ -1,43 +1,108 @@
-```markdown
-# GW Smart Charging
+# GW Smart Charging v1.4.0
 
-GW Smart Charging automatizuje nabíjení baterie přes GoodWe invertor podle hodinových cen a solárního forecastu.
+GW Smart Charging automatizuje nabíjení baterie GoodWe podle 15minutových cen a solárního forecastu s aktivním řízením každé 2 minuty.
 
-Co dělá
-- Vypočítává 24-hodinový plán nabíjení (mode: pv / grid / idle) a vystavuje jej v sensoru.
-- Podporuje UI config flow (přidání přes Settings → Devices & Services → Add integration).
-- Nabízí služby:
-  - gw_smart_charging.optimize_now
-  - gw_smart_charging.apply_schedule_now
+## Co dělá
+- **Automatické volání skriptů** - Každé 2 minuty vyhodnotí plán a zavolá `script.nabijeni_on` nebo `script.nabijeni_off`
+- **15minutová optimalizace** - Vypočítává 96-slotový plán nabíjení s přesným řízením
+- **Inteligentní režimy** - solar_charge, grid_charge_cheap, grid_charge_optimal, battery_discharge
+- **Diagnostika** - Kompletní přehled stavu, konfigurace a logiky v diagnostickém senzoru
+- **ApexCharts ready** - Všechny series senzory s atributy data_15min a timestamps pro grafy
 
-Screenshot
-- Přidejte alespoň jeden obrázek do .github/assets/ (např. screenshot.png) a upravte zde odkaz.
+## Nové v 1.4.0
+✅ Aktivní automatizace - integrace sama volá nabíjecí skripty  
+✅ Update každé 2 minuty místo 5 minut  
+✅ Diagnostický senzor s kompletním přehledem  
+✅ Lepší logování a monitoring  
 
-Instalace přes HACS
+## Instalace přes HACS
 1. HACS → Settings → Custom repositories → Add repository  
-   - Repository URL: https://github.com/someone11221/gw_smart_energy_charging  
+   - Repository URL: `https://github.com/someone11221/gw_smart_energy_charging`
    - Category: Integration
-2. Po instalaci restartujte Home Assistant.
+2. Po instalaci restartujte Home Assistant
 3. Settings → Devices & Services → Add Integration → GW Smart Charging
 
-Konfigurace (UI)
-- forecast_sensor: sensor s 24hodinovou předpovědí PV (např. ha-open-meteo-solar-forecast)
-- price_sensor: sensor s 24hodinovými cenami elektřiny
-- pv_power_sensor (volitelně): aktuální výkon FVE
-- soc_sensor: sensor stavu nabití baterie (SOC)
-- goodwe_switch: switch pro povolení/zakázání nabíjení ze sítě
-- battery_capacity_kwh, max_charge_power_kw, charge_efficiency, min_reserve_pct
+## Konfigurace (UI)
+Všechny parametry lze nastavit přes UI:
+- **Senzory**: forecast, price, load, daily_load, SOC, battery_power, grid_import
+- **Skripty**: `script.nabijeni_on`, `script.nabijeni_off` (automaticky volány)
+- **Baterie**: capacity (17 kWh), max_charge_power (3.7 kW), efficiency (0.95)
+- **SOC**: min (10%), max (95%), target (90%)
+- **Ceny**: always_charge_price (1.5), never_charge_price (4.0), hysteresis (5%)
+- **Critical hours**: start (17), end (21), SOC (80%)
+- **Automatizace**: enable_automation (true)
 
-Ladění
-- Dočasné zapnutí debug logování (v configuration.yaml):
+## Senzory
+- `sensor.gw_smart_charging_forecast_status` - Stav integrace
+- `sensor.gw_smart_charging_forecast` - PV forecast s atributy
+- `sensor.gw_smart_charging_price` - Ceny s atributy
+- `sensor.gw_smart_charging_schedule` - Aktuální režim a plán
+- `sensor.gw_smart_charging_soc_forecast` - Predikce SOC
+- `sensor.gw_smart_charging_diagnostics` - 🆕 Kompletní diagnostika
+- `switch.gw_smart_charging_auto_charging` - Switch pro manuální ovládání
+- **Series senzory** (pro grafy): pv, load, battery_charge, battery_discharge, grid_import, soc_forecast
+
+## ApexCharts příklad
+```yaml
+type: custom:apexcharts-card
+header:
+  show: true
+  title: GW Smart Charging Plan
+graph_span: 24h
+span:
+  start: day
+series:
+  - entity: sensor.gw_smart_charging_series_pv
+    name: Solar Production
+    type: area
+    data_generator: |
+      return entity.attributes.data_15min.map((value, index) => {
+        return [new Date(entity.attributes.timestamps[index]).getTime(), value];
+      });
+  - entity: sensor.gw_smart_charging_series_load
+    name: House Load
+    type: line
+    data_generator: |
+      return entity.attributes.data_15min.map((value, index) => {
+        return [new Date(entity.attributes.timestamps[index]).getTime(), value];
+      });
+  - entity: sensor.gw_smart_charging_series_battery_charge
+    name: Battery Charge
+    type: column
+    data_generator: |
+      return entity.attributes.data_15min.map((value, index) => {
+        return [new Date(entity.attributes.timestamps[index]).getTime(), value];
+      });
+  - entity: sensor.gw_smart_charging_series_soc_forecast
+    name: SOC Forecast
+    type: line
+    yaxis_id: soc
+    data_generator: |
+      return entity.attributes.data_15min.map((value, index) => {
+        return [new Date(entity.attributes.timestamps[index]).getTime(), value];
+      });
+yaxis:
+  - id: power
+    decimals: 1
+    apex_config:
+      title:
+        text: Power (kW)
+  - id: soc
+    opposite: true
+    decimals: 0
+    apex_config:
+      title:
+        text: SOC (%)
+```
+
+## Ladění
+Debug logování v `configuration.yaml`:
 ```yaml
 logger:
   default: warning
   logs:
     custom_components.gw_smart_charging: debug
-    homeassistant.config_entries: debug
 ```
 
-Kontakt / podpora
+## Podpora
 - Issues: https://github.com/someone11221/gw_smart_energy_charging/issues
-```

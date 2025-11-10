@@ -1,0 +1,197 @@
+# Example Scripts for GW Smart Charging v1.4.0
+# ==============================================
+# Tyto skripty jsou volány automaticky integrací každé 2 minuty.
+# Přizpůsobte je vaší GoodWe konfiguraci.
+
+# DŮLEŽITÉ: Integrace volá tyto skripty pomocí script.turn_on service,
+# takže skripty musí být pojmenované přesně jako v konfiguraci integrace.
+
+# 1. Script pro zapnutí nabíjení (nabijeni_on)
+# ---------------------------------------------
+nabijeni_on:
+  alias: "GW - Zapnout nabíjení"
+  description: "Zapne nabíjení baterie z gridu (volá integrace automaticky)"
+  icon: mdi:battery-charging
+  sequence:
+    # Varianta A: Pokud máte GoodWe switch přímo
+    - service: switch.turn_on
+      target:
+        entity_id: switch.goodwe_battery_charge_from_grid
+    
+    # Varianta B: Pokud ovládáte přes ModBus
+    # - service: modbus.write_register
+    #   data:
+    #     hub: goodwe
+    #     address: 45352  # Grid charge enable register
+    #     value: 1
+    
+    # Varianta C: Pokud používáte REST API
+    # - service: rest_command.goodwe_enable_charging
+    
+    # Logování pro diagnostiku
+    - service: logbook.log
+      data:
+        name: "GW Smart Charging"
+        message: "Nabíjení ZAPNUTO - cena: {{ state_attr('sensor.gw_smart_charging_schedule', 'current_price') }} CZK/kWh"
+    
+    # Volitelně: Notifikace
+    # - service: notify.persistent_notification
+    #   data:
+    #     title: "⚡ GW Nabíjení"
+    #     message: "Nabíjení baterie ZAPNUTO"
+
+# 2. Script pro vypnutí nabíjení (nabijeni_off)
+# ----------------------------------------------
+nabijeni_off:
+  alias: "GW - Vypnout nabíjení"
+  description: "Vypne nabíjení baterie z gridu (volá integrace automaticky)"
+  icon: mdi:battery-off
+  sequence:
+    # Varianta A: Pokud máte GoodWe switch přímo
+    - service: switch.turn_off
+      target:
+        entity_id: switch.goodwe_battery_charge_from_grid
+    
+    # Varianta B: Pokud ovládáte přes ModBus
+    # - service: modbus.write_register
+    #   data:
+    #     hub: goodwe
+    #     address: 45352  # Grid charge enable register
+    #     value: 0
+    
+    # Varianta C: Pokud používáte REST API
+    # - service: rest_command.goodwe_disable_charging
+    
+    # Logování pro diagnostiku
+    - service: logbook.log
+      data:
+        name: "GW Smart Charging"
+        message: "Nabíjení VYPNUTO - režim: {{ states('sensor.gw_smart_charging_schedule') }}"
+    
+    # Volitelně: Notifikace
+    # - service: notify.persistent_notification
+    #   data:
+    #     title: "🔋 GW Nabíjení"
+    #     message: "Nabíjení baterie VYPNUTO"
+
+# 3. Advanced: Script s podmínkami (volitelné)
+# --------------------------------------------
+nabijeni_on_advanced:
+  alias: "GW - Zapnout nabíjení (Advanced)"
+  description: "Zapne nabíjení s dodatečnými kontrolami"
+  icon: mdi:battery-charging-wireless
+  sequence:
+    # Kontrola: Pouze pokud SOC pod 90%
+    - condition: numeric_state
+      entity_id: sensor.battery_state_of_charge
+      below: 90
+    
+    # Kontrola: Pouze pokud cena pod limitem
+    - condition: numeric_state
+      entity_id: sensor.gw_smart_charging_price
+      below: 4.0
+    
+    # Zapnutí nabíjení
+    - service: switch.turn_on
+      target:
+        entity_id: switch.goodwe_battery_charge_from_grid
+    
+    # Nastavení nabíjecího proudu (pokud podporováno)
+    # - service: number.set_value
+    #   target:
+    #     entity_id: number.goodwe_charge_current
+    #   data:
+    #     value: 30  # Ampéry
+    
+    # Logování s detaily
+    - service: logbook.log
+      data:
+        name: "GW Smart Charging Advanced"
+        message: >
+          Nabíjení ZAPNUTO
+          SOC: {{ states('sensor.battery_state_of_charge') }}%
+          Cena: {{ state_attr('sensor.gw_smart_charging_schedule', 'current_price') }} CZK/kWh
+          Režim: {{ states('sensor.gw_smart_charging_schedule') }}
+
+# 4. Advanced: Script s nastavením priority (volitelné)
+# -----------------------------------------------------
+nabijeni_on_priority:
+  alias: "GW - Zapnout nabíjení s prioritou"
+  description: "Zapne nabíjení a nastaví správnou prioritu"
+  sequence:
+    # Nastavit battery priority mode
+    - service: select.select_option
+      target:
+        entity_id: select.goodwe_battery_mode
+      data:
+        option: "Battery First"  # Nebo "Grid First" podle potřeby
+    
+    # Zapnout nabíjení
+    - service: switch.turn_on
+      target:
+        entity_id: switch.goodwe_battery_charge_from_grid
+    
+    # Čekat na potvrzení
+    - delay:
+        seconds: 5
+    
+    # Kontrola zda se skutečně zapnulo
+    - condition: state
+      entity_id: switch.goodwe_battery_charge_from_grid
+      state: "on"
+    
+    # Logování
+    - service: system_log.write
+      data:
+        level: info
+        message: "GW Smart Charging: Nabíjení úspěšně zapnuto s Battery First režimem"
+
+# 5. Testovací script (pro diagnostiku)
+# --------------------------------------
+test_gw_charging:
+  alias: "GW - Test nabíjení"
+  description: "Testovací script pro ověření funkčnosti"
+  sequence:
+    # Test ON
+    - service: script.turn_on
+      target:
+        entity_id: script.nabijeni_on
+    
+    - service: persistent_notification.create
+      data:
+        title: "Test GW Charging"
+        message: "Nabíjení zapnuto - čekám 30s"
+    
+    - delay:
+        seconds: 30
+    
+    # Test OFF
+    - service: script.turn_on
+      target:
+        entity_id: script.nabijeni_off
+    
+    - service: persistent_notification.create
+      data:
+        title: "Test GW Charging"
+        message: "Nabíjení vypnuto - test dokončen"
+
+# 6. Emergency stop script
+# ------------------------
+gw_emergency_stop:
+  alias: "GW - Nouzové zastavení"
+  description: "Okamžitě zastaví nabíjení"
+  icon: mdi:alert-octagon
+  sequence:
+    - service: script.turn_on
+      target:
+        entity_id: script.nabijeni_off
+    
+    - service: notify.mobile_app
+      data:
+        title: "🚨 GW Emergency Stop"
+        message: "Nouzové zastavení nabíjení aktivováno!"
+    
+    - service: system_log.write
+      data:
+        level: warning
+        message: "GW Smart Charging: Emergency stop triggered!"

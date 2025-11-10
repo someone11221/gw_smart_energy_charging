@@ -19,6 +19,9 @@ from .const import (
     CONF_SOC_SENSOR,
     CONF_BATTERY_POWER_SENSOR,
     CONF_GRID_IMPORT_SENSOR,
+    CONF_CHARGING_ON_SCRIPT,
+    CONF_CHARGING_OFF_SCRIPT,
+    CONF_ENABLE_AUTOMATION,
     CONF_BATTERY_CAPACITY,
     CONF_MAX_CHARGE_POWER,
     CONF_CHARGE_EFFICIENCY,
@@ -58,7 +61,7 @@ class GWSmartCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name="gw_smart_charging_coordinator",
-            update_interval=timedelta(minutes=5),
+            update_interval=timedelta(minutes=2),  # Update every 2 minutes for responsive automation
         )
         self.entry = entry
         self.config: dict[str, Any] = entry.data or {}
@@ -68,6 +71,7 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         # Machine learning data - store last 30 days of hourly consumption patterns
         self._ml_history: List[List[float]] = []  # List of 24-hour patterns
         self._last_charging_state: bool = False  # For hysteresis tracking
+        self._last_script_state: Optional[bool] = None  # Track last script execution state
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch and normalize forecast, price and load data and compute 15-min schedule."""
@@ -135,6 +139,9 @@ class GWSmartCoordinator(DataUpdateCoordinator):
             # Compute 15-min optimized schedule
             schedule = self._compute_schedule_15min(forecast_15min, price_15min, load_15min)
 
+            # Execute charging automation if enabled
+            await self._execute_charging_automation(schedule)
+
             return {
                 "status": "ok",
                 "forecast_15min": forecast_15min,
@@ -148,6 +155,65 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.error("Update failed: %s", err, exc_info=True)
             raise UpdateFailed(err) from err
+
+    async def _execute_charging_automation(self, schedule: List[Dict[str, Any]]) -> None:
+        """Execute charging scripts based on current schedule slot.
+        
+        Only calls scripts when state changes to avoid unnecessary calls.
+        """
+        # Check if automation is enabled
+        automation_enabled = self.config.get(CONF_ENABLE_AUTOMATION, True)
+        if not automation_enabled:
+            _LOGGER.debug("Automation disabled, skipping script execution")
+            return
+        
+        # Get scripts
+        charging_on_script = self.config.get(CONF_CHARGING_ON_SCRIPT)
+        charging_off_script = self.config.get(CONF_CHARGING_OFF_SCRIPT)
+        
+        if not charging_on_script or not charging_off_script:
+            _LOGGER.debug("Charging scripts not configured, skipping automation")
+            return
+        
+        # Get current slot
+        now = datetime.now()
+        slot = now.hour * 4 + now.minute // 15
+        
+        if not schedule or slot >= len(schedule):
+            _LOGGER.debug("No schedule available for current slot %d", slot)
+            return
+        
+        current_slot = schedule[slot]
+        should_charge = current_slot.get("should_charge", False)
+        
+        # Only call script if state changed
+        if self._last_script_state is None or self._last_script_state != should_charge:
+            try:
+                if should_charge:
+                    _LOGGER.info("Turning ON charging (slot %d, mode: %s, price: %.2f CZK/kWh)", 
+                                slot, current_slot.get("mode", "unknown"), 
+                                current_slot.get("price_czk_kwh", 0.0))
+                    await self.hass.services.async_call(
+                        "script", "turn_on", 
+                        {"entity_id": charging_on_script}, 
+                        blocking=False
+                    )
+                else:
+                    _LOGGER.info("Turning OFF charging (slot %d, mode: %s)", 
+                                slot, current_slot.get("mode", "unknown"))
+                    await self.hass.services.async_call(
+                        "script", "turn_on", 
+                        {"entity_id": charging_off_script}, 
+                        blocking=False
+                    )
+                
+                self._last_script_state = should_charge
+                _LOGGER.debug("Script execution successful, new state: %s", should_charge)
+                
+            except Exception as e:
+                _LOGGER.error("Failed to execute charging script: %s", e, exc_info=True)
+        else:
+            _LOGGER.debug("Charging state unchanged (%s), skipping script call", should_charge)
 
     # ---------- NEW: 15-minute interval parsing methods ----------
     

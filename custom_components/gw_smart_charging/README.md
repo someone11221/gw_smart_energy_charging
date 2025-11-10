@@ -25,10 +25,12 @@ Pokročilá integrace pro optimalizaci nabíjení baterie GoodWe s využitím so
 
 Integration vytváří následující senzory:
 
+- **GW Smart Charging Forecast Status** - Stav integrace
 - **GW Smart Charging Forecast** - Solární forecast (15min data)
 - **GW Smart Charging Price** - Ceny elektřiny (15min data)
 - **GW Smart Charging Schedule** - Aktuální režim a plán nabíjení
 - **GW Smart Charging SOC Forecast** - Predikce stavu baterie
+- **GW Smart Charging Diagnostics** - 🆕 Kompletní diagnostika a stav integrace
 - **GW Smart Charging Auto Charging** (switch) - Ovládání automatického nabíjení
 - **Series senzory** (pro grafy):
   - Series pv - Solární výroba
@@ -83,8 +85,24 @@ Integration vytváří následující senzory:
 - **enable_ml_prediction**: Zapnout ML predikci spotřeby - výchozí false
 
 ### Automatizace
-- **enable_automation**: Povolit automatické ovládání switche
+- **enable_automation**: Povolit automatické ovládání skriptů nabíjení - výchozí true
 - **switch_on_means_charge**: Switch ON = nabíjení
+
+**Jak funguje automatizace (v1.4.0):**
+1. Integrace se aktualizuje každé 2 minuty
+2. Vyhodnotí aktuální 15min slot a rozhodne, zda nabíjet
+3. Pokud se stav změnil, zavolá příslušný script:
+   - `script.nabijeni_on` - zapnutí nabíjení
+   - `script.nabijeni_off` - vypnutí nabíjení
+4. Skripty se volají pouze při změně stavu (ne opakovaně)
+5. Veškeré akce jsou logovány pro diagnostiku
+
+**Diagnostický senzor:**
+- Zobrazuje aktuální stav automatizace
+- Informace o poslední akci skriptu
+- Distribuci režimů v plánu
+- Čas příštího nabíjení
+- Konfiguraci senzorů a skriptů
 
 ## Rekonfigurace
 
@@ -97,34 +115,194 @@ Integration se automaticky znovu načte s novými nastaveními.
 
 ## Lovelace vizualizace
 
-Pro zobrazení grafů použijte ApexCharts card nebo podobné s atributy `data_15min` a `timestamps` ze series senzorů.
+### 1. Status Card - Aktuální stav
 
-Příklad ApexCharts konfigurace:
+Zobrazení aktuálního stavu integrace s diagnostikou:
+
+```yaml
+type: entities
+title: GW Smart Charging Status
+entities:
+  - entity: sensor.gw_smart_charging_diagnostics
+    name: Status
+  - type: attribute
+    entity: sensor.gw_smart_charging_diagnostics
+    attribute: current_mode
+    name: Aktuální režim
+  - type: attribute
+    entity: sensor.gw_smart_charging_diagnostics
+    attribute: should_charge_now
+    name: Mělo by nabíjet
+  - type: attribute
+    entity: sensor.gw_smart_charging_diagnostics
+    attribute: current_price
+    name: Aktuální cena
+    suffix: ' CZK/kWh'
+  - type: attribute
+    entity: sensor.gw_smart_charging_diagnostics
+    attribute: current_soc
+    name: Aktuální SOC
+    suffix: ' %'
+  - type: attribute
+    entity: sensor.gw_smart_charging_diagnostics
+    attribute: charging_slots_today
+    name: Nabíjecích slotů dnes
+  - type: attribute
+    entity: sensor.gw_smart_charging_diagnostics
+    attribute: next_charge_time
+    name: Další nabíjení
+  - type: attribute
+    entity: sensor.gw_smart_charging_diagnostics
+    attribute: last_script_state
+    name: Poslední stav skriptu
+  - entity: switch.gw_smart_charging_auto_charging
+    name: Auto nabíjení
+```
+
+### 2. ApexCharts - Plán nabíjení
+
+Kompletní vizualizace plánu na 24 hodin:
+
 ```yaml
 type: custom:apexcharts-card
+header:
+  show: true
+  title: GW Smart Charging - 24h plán
+  show_states: true
+  colorize_states: true
 graph_span: 24h
 span:
   start: day
-header:
+now:
   show: true
-  title: Plán nabíjení
+  label: Teď
+yaxis:
+  - id: power
+    decimals: 1
+    apex_config:
+      title:
+        text: Výkon (kW)
+  - id: soc
+    opposite: true
+    decimals: 0
+    min: 0
+    max: 100
+    apex_config:
+      title:
+        text: SOC (%)
 series:
   - entity: sensor.gw_smart_charging_series_pv
     name: Solární výroba
+    type: area
+    color: orange
+    opacity: 0.3
+    yaxis_id: power
     data_generator: |
       return entity.attributes.data_15min.map((value, index) => {
         return [new Date(entity.attributes.timestamps[index]).getTime(), value];
       });
   - entity: sensor.gw_smart_charging_series_load
     name: Spotřeba domu
+    type: line
+    color: blue
+    stroke_width: 2
+    yaxis_id: power
     data_generator: |
       return entity.attributes.data_15min.map((value, index) => {
         return [new Date(entity.attributes.timestamps[index]).getTime(), value];
       });
   - entity: sensor.gw_smart_charging_series_battery_charge
     name: Nabíjení baterie
+    type: column
+    color: green
+    yaxis_id: power
     data_generator: |
       return entity.attributes.data_15min.map((value, index) => {
         return [new Date(entity.attributes.timestamps[index]).getTime(), value];
       });
+  - entity: sensor.gw_smart_charging_series_battery_discharge
+    name: Vybíjení baterie
+    type: column
+    color: red
+    yaxis_id: power
+    data_generator: |
+      return entity.attributes.data_15min.map((value, index) => {
+        return [new Date(entity.attributes.timestamps[index]).getTime(), value];
+      });
+  - entity: sensor.gw_smart_charging_series_soc_forecast
+    name: SOC prognóza
+    type: line
+    color: purple
+    stroke_width: 3
+    yaxis_id: soc
+    data_generator: |
+      return entity.attributes.data_15min.map((value, index) => {
+        return [new Date(entity.attributes.timestamps[index]).getTime(), value];
+      });
+```
+
+### 3. Ceny elektřiny
+
+Graf hodinových cen s označením prahů:
+
+```yaml
+type: custom:apexcharts-card
+header:
+  show: true
+  title: Ceny elektřiny
+graph_span: 24h
+span:
+  start: day
+series:
+  - entity: sensor.gw_smart_charging_price
+    name: Cena
+    type: line
+    stroke_width: 2
+    data_generator: |
+      return entity.attributes.price_15min.map((value, index) => {
+        return [new Date(entity.attributes.timestamps[index]).getTime(), value];
+      });
+apex_config:
+  annotations:
+    yaxis:
+      - y: 1.5
+        borderColor: '#00FF00'
+        label:
+          text: 'Always Charge'
+          style:
+            background: '#00FF00'
+      - y: 4.0
+        borderColor: '#FF0000'
+        label:
+          text: 'Never Charge'
+          style:
+            background: '#FF0000'
+```
+
+### 4. Kompletní dashboard
+
+Všechny karty najednou v jednom pohledu:
+
+```yaml
+type: vertical-stack
+cards:
+  - type: entities
+    title: GW Smart Charging v1.4.0
+    entities:
+      - entity: sensor.gw_smart_charging_diagnostics
+      - entity: switch.gw_smart_charging_auto_charging
+      - entity: sensor.gw_smart_charging_schedule
+      - entity: sensor.gw_smart_charging_soc_forecast
+  
+  - type: custom:apexcharts-card
+    header:
+      show: true
+      title: Plán nabíjení - 24h
+    graph_span: 24h
+    span:
+      start: day
+    now:
+      show: true
+    series:
+      # ... (viz příklad 2 výše)
 ```

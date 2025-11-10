@@ -25,6 +25,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         GWSmartPriceSensor(coordinator, entry.entry_id),
         GWSmartScheduleSensor(coordinator, entry.entry_id),
         GWSmartSOCSensor(coordinator, entry.entry_id),
+        GWSmartDiagnosticsSensor(coordinator, entry.entry_id),  # New diagnostics sensor
         # series sensors for Lovelace plotting (15-min resolution)
         GWSmartSeriesSensor(coordinator, entry.entry_id, "pv"),
         GWSmartSeriesSensor(coordinator, entry.entry_id, "load"),
@@ -209,6 +210,91 @@ class GWSmartSOCSensor(CoordinatorEntity, SensorEntity):
             "timestamps": timestamps,
             "min_soc_pct": round(min_soc, 2),
             "max_soc_pct": round(max_soc, 2),
+        }
+
+
+class GWSmartDiagnosticsSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing integration diagnostics and status information."""
+
+    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._attr_name = f"{DEFAULT_NAME} Diagnostics"
+        self._attr_unique_id = f"{entry_id}_diagnostics"
+        self._attr_icon = "mdi:information-outline"
+
+    @property
+    def native_value(self) -> str:
+        """Return integration status."""
+        data = self.coordinator.data or {}
+        status = data.get("status", "unknown")
+        
+        # Get current slot info
+        schedule = data.get("schedule") or []
+        if schedule:
+            now = datetime.now()
+            slot = now.hour * 4 + now.minute // 15
+            if 0 <= slot < len(schedule):
+                current_slot = schedule[slot]
+                mode = current_slot.get("mode", "unknown")
+                return f"{status} - {mode}"
+        
+        return status
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return diagnostics attributes."""
+        data = self.coordinator.data or {}
+        schedule = data.get("schedule") or []
+        
+        # Current slot information
+        now = datetime.now()
+        slot = now.hour * 4 + now.minute // 15
+        current_slot = schedule[slot] if 0 <= slot < len(schedule) else {}
+        
+        # Configuration summary
+        from .const import (
+            CONF_CHARGING_ON_SCRIPT, CONF_CHARGING_OFF_SCRIPT,
+            CONF_ENABLE_AUTOMATION, CONF_FORECAST_SENSOR, CONF_PRICE_SENSOR
+        )
+        
+        # Count different modes
+        mode_counts = {}
+        charging_slots = 0
+        for s in schedule:
+            mode = s.get("mode", "unknown")
+            mode_counts[mode] = mode_counts.get(mode, 0) + 1
+            if s.get("should_charge", False):
+                charging_slots += 1
+        
+        # Find next charging period
+        next_charge_slot = None
+        for i in range(slot + 1, len(schedule)):
+            if schedule[i].get("should_charge", False):
+                next_charge_slot = schedule[i]
+                break
+        
+        return {
+            "last_update": data.get("last_update", "never"),
+            "update_interval_minutes": 2,
+            "automation_enabled": self.coordinator.config.get(CONF_ENABLE_AUTOMATION, True),
+            "charging_on_script": self.coordinator.config.get(CONF_CHARGING_ON_SCRIPT, "not_set"),
+            "charging_off_script": self.coordinator.config.get(CONF_CHARGING_OFF_SCRIPT, "not_set"),
+            "forecast_sensor": self.coordinator.config.get(CONF_FORECAST_SENSOR, "not_set"),
+            "price_sensor": self.coordinator.config.get(CONF_PRICE_SENSOR, "not_set"),
+            "current_slot": slot,
+            "current_mode": current_slot.get("mode", "unknown"),
+            "current_price": current_slot.get("price_czk_kwh", 0.0),
+            "current_soc": current_slot.get("soc_pct_end", 0.0),
+            "should_charge_now": current_slot.get("should_charge", False),
+            "last_script_state": self.coordinator._last_script_state,
+            "total_schedule_slots": len(schedule),
+            "charging_slots_today": charging_slots,
+            "mode_distribution": mode_counts,
+            "next_charge_time": next_charge_slot.get("time", "none") if next_charge_slot else "none",
+            "next_charge_price": next_charge_slot.get("price_czk_kwh", 0.0) if next_charge_slot else 0.0,
+            "forecast_confidence": data.get("forecast_confidence", {}),
+            "forecast_source": data.get("forecast_source", "unknown"),
         }
 
 
