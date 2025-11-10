@@ -48,6 +48,8 @@ CONF_ENABLE_AUTOMATION = "enable_automation"
 CONF_SWITCH_ON_MEANS_CHARGE = "switch_on_means_charge"
 CONF_TEST_MODE = "test_mode"
 CONF_CHARGING_STRATEGY = "charging_strategy"
+CONF_LANGUAGE = "language"
+CONF_FULL_HOUR_CHARGING = "full_hour_charging"
 
 # Charging strategies
 STRATEGY_DYNAMIC = "dynamic"  # Smart optimization based on prices and forecasts (default)
@@ -55,6 +57,10 @@ STRATEGY_4_LOWEST = "4_lowest_hours"  # Always charge in 4 lowest priced hours
 STRATEGY_6_LOWEST = "6_lowest_hours"  # Always charge in 6 lowest priced hours
 STRATEGY_NANOGREEN_ONLY = "nanogreen_only"  # Use only Nanogreen sensor
 STRATEGY_PRICE_THRESHOLD = "price_threshold"  # Charge whenever below always_charge_price
+STRATEGY_ADAPTIVE_SMART = "adaptive_smart"  # Learns from consumption patterns
+STRATEGY_SOLAR_PRIORITY = "solar_priority"  # Maximize solar self-consumption
+STRATEGY_PEAK_SHAVING = "peak_shaving"  # Avoid grid during peak hours
+STRATEGY_TOU_OPTIMIZED = "tou_optimized"  # Optimized for Time-of-Use tariffs
 
 # Default values
 DEFAULT_BATTERY_CAPACITY = 17.0
@@ -72,3 +78,9 @@ DEFAULT_CRITICAL_HOURS_SOC = 80.0  # 80%
 DEFAULT_ENABLE_ML_PREDICTION = False
 DEFAULT_SWITCH_PRICE_THRESHOLD = 2.0  # CZK/kWh - threshold for turning on additional switches
 DEFAULT_CHARGING_STRATEGY = STRATEGY_DYNAMIC  # Default to dynamic optimization
+DEFAULT_LANGUAGE = "cs"  # Default to Czech
+DEFAULT_FULL_HOUR_CHARGING = True  # Default to full hour charging cycles
+
+# Language options
+LANGUAGE_CS = "cs"
+LANGUAGE_EN = "en"

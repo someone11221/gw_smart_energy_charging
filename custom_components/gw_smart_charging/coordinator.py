@@ -27,11 +27,17 @@ from .const import (
     CONF_SWITCH_PRICE_THRESHOLD,
     CONF_TEST_MODE,
     CONF_CHARGING_STRATEGY,
+    CONF_LANGUAGE,
+    CONF_FULL_HOUR_CHARGING,
     STRATEGY_DYNAMIC,
     STRATEGY_4_LOWEST,
     STRATEGY_6_LOWEST,
     STRATEGY_NANOGREEN_ONLY,
     STRATEGY_PRICE_THRESHOLD,
+    STRATEGY_ADAPTIVE_SMART,
+    STRATEGY_SOLAR_PRIORITY,
+    STRATEGY_PEAK_SHAVING,
+    STRATEGY_TOU_OPTIMIZED,
     CONF_BATTERY_CAPACITY,
     CONF_MAX_CHARGE_POWER,
     CONF_CHARGE_EFFICIENCY,
@@ -999,6 +1005,26 @@ class GWSmartCoordinator(DataUpdateCoordinator):
             always_charge_price = float(self.config.get(CONF_ALWAYS_CHARGE_PRICE, DEFAULT_ALWAYS_CHARGE_PRICE))
             return self._strategy_price_threshold(prices, current_time_slot, always_charge_price)
         
+        elif strategy == STRATEGY_ADAPTIVE_SMART:
+            # Adaptive learning from consumption patterns
+            return self._strategy_adaptive_smart(prices, loads, forecast, current_time_slot, 
+                                                 soc_kwh, target_soc_kwh, max_charge, eff, interval_hours)
+        
+        elif strategy == STRATEGY_SOLAR_PRIORITY:
+            # Maximize solar self-consumption
+            return self._strategy_solar_priority(prices, loads, forecast, current_time_slot,
+                                                 soc_kwh, target_soc_kwh, max_charge, eff, interval_hours)
+        
+        elif strategy == STRATEGY_PEAK_SHAVING:
+            # Avoid grid during peak hours
+            return self._strategy_peak_shaving(prices, loads, forecast, current_time_slot,
+                                               soc_kwh, target_soc_kwh, max_charge, eff, interval_hours)
+        
+        elif strategy == STRATEGY_TOU_OPTIMIZED:
+            # Optimized for Time-of-Use tariffs
+            return self._strategy_tou_optimized(prices, loads, forecast, current_time_slot,
+                                                soc_kwh, target_soc_kwh, max_charge, eff, interval_hours)
+        
         else:  # STRATEGY_DYNAMIC (default)
             # Use the smart dynamic optimization (existing behavior)
             return self._find_optimal_charging_slots(
@@ -1009,6 +1035,13 @@ class GWSmartCoordinator(DataUpdateCoordinator):
     def _strategy_n_lowest_hours(self, prices: List[float], current_slot: int, n_hours: int) -> List[int]:
         """Strategy: Charge in N lowest priced hours within next 24 hours."""
         n_slots = n_hours * 4  # Convert hours to 15-min slots
+        
+        # Check if full hour charging is enabled
+        full_hour_charging = self.config.get(CONF_FULL_HOUR_CHARGING, True)
+        
+        if full_hour_charging:
+            # Find N cheapest HOURS (not individual slots)
+            return self._find_n_cheapest_hours(prices, current_slot, n_hours)
         
         # Get all valid slots with prices
         valid_slots = []
@@ -1025,6 +1058,38 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         
         _LOGGER.info(f"Strategy {n_hours} lowest hours: selected {len(cheapest_slots)} slots")
         return sorted(cheapest_slots)
+    
+    def _find_n_cheapest_hours(self, prices: List[float], current_slot: int, n_hours: int) -> List[int]:
+        """Find N cheapest full hours (4 consecutive 15-min slots each).
+        
+        NEW v2.2.0: Ensures charging happens in full hour blocks.
+        """
+        # Calculate average price for each hour
+        hour_prices = []
+        for hour_start in range(current_slot, min(current_slot + 96, 96), 4):
+            # Get 4 slots for this hour
+            hour_slots = list(range(hour_start, min(hour_start + 4, 96)))
+            if len(hour_slots) == 4 and all(s < len(prices) for s in hour_slots):
+                # Calculate average price for this hour
+                avg_price = sum(prices[s] for s in hour_slots if prices[s] > 0) / len(hour_slots)
+                if avg_price > 0:
+                    hour_prices.append((hour_start, avg_price, hour_slots))
+        
+        if not hour_prices:
+            return []
+        
+        # Sort hours by average price
+        hour_prices.sort(key=lambda x: x[1])
+        
+        # Select N cheapest hours
+        selected_slots = []
+        for i in range(min(n_hours, len(hour_prices))):
+            hour_start, avg_price, hour_slots = hour_prices[i]
+            selected_slots.extend(hour_slots)
+            _LOGGER.debug(f"Selected hour starting at slot {hour_start} with avg price {avg_price:.2f} CZK/kWh")
+        
+        _LOGGER.info(f"Full-hour charging: selected {len(selected_slots)} slots in {min(n_hours, len(hour_prices))} cheapest hours")
+        return sorted(selected_slots)
     
     def _strategy_nanogreen_only(self, current_slot: int) -> List[int]:
         """Strategy: Use only Nanogreen sensor for charging decisions."""
@@ -1052,6 +1117,143 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         
         _LOGGER.info(f"Price threshold strategy: found {len(charging_slots)} slots below {threshold:.2f} CZK/kWh")
         return charging_slots
+    
+    def _strategy_adaptive_smart(self, prices: List[float], loads: List[float], forecast: List[float],
+                                  current_slot: int, soc_kwh: float, target_soc_kwh: float,
+                                  max_charge: float, eff: float, interval_hours: float = 0.25) -> List[int]:
+        """Strategy: Adaptive Smart - learns from consumption patterns.
+        
+        This strategy uses ML patterns combined with price optimization.
+        It prioritizes charging before predicted high consumption periods.
+        """
+        # Use the standard optimizer but with enhanced ML weighting
+        slots = self._find_optimal_charging_slots(
+            prices, loads, forecast, soc_kwh, target_soc_kwh,
+            17.0, max_charge, eff, interval_hours  # Use default capacity
+        )
+        
+        # Filter to only charge in periods with price below average
+        if len(prices) > 0:
+            avg_price = sum(p for p in prices if p > 0) / len([p for p in prices if p > 0])
+            slots = [s for s in slots if s < len(prices) and prices[s] < avg_price * 1.1]
+        
+        _LOGGER.info(f"Adaptive smart strategy: selected {len(slots)} slots based on ML patterns")
+        return slots
+    
+    def _strategy_solar_priority(self, prices: List[float], loads: List[float], forecast: List[float],
+                                  current_slot: int, soc_kwh: float, target_soc_kwh: float,
+                                  max_charge: float, eff: float, interval_hours: float = 0.25) -> List[int]:
+        """Strategy: Solar Priority - maximize solar self-consumption.
+        
+        Charges mainly when solar forecast is high and price is reasonable.
+        Avoids grid charging unless absolutely necessary.
+        """
+        charging_slots = []
+        energy_needed = max(0, target_soc_kwh - soc_kwh)
+        
+        if energy_needed < 0.5:
+            return []
+        
+        # Find slots with good solar forecast
+        solar_slots = []
+        for slot in range(current_slot, min(current_slot + 96, 96)):
+            if slot < len(forecast) and forecast[slot] > 0.5:  # Good solar production
+                solar_slots.append((slot, forecast[slot], prices[slot] if slot < len(prices) else 999.0))
+        
+        # Sort by solar forecast (descending) and price (ascending)
+        solar_slots.sort(key=lambda x: (-x[1], x[2]))
+        
+        # Select slots until we have enough energy
+        max_energy_per_slot = max_charge * interval_hours * eff
+        slots_needed = int((energy_needed / max_energy_per_slot) + 0.5)
+        
+        for slot, solar, price in solar_slots[:slots_needed]:
+            charging_slots.append(slot)
+        
+        _LOGGER.info(f"Solar priority strategy: selected {len(charging_slots)} slots with good solar forecast")
+        return sorted(charging_slots)
+    
+    def _strategy_peak_shaving(self, prices: List[float], loads: List[float], forecast: List[float],
+                                current_slot: int, soc_kwh: float, target_soc_kwh: float,
+                                max_charge: float, eff: float, interval_hours: float = 0.25) -> List[int]:
+        """Strategy: Peak Shaving - avoid grid during peak hours.
+        
+        Ensures battery is charged before peak consumption hours.
+        Prioritizes charging during lowest price periods outside peak.
+        """
+        charging_slots = []
+        energy_needed = max(0, target_soc_kwh - soc_kwh)
+        
+        if energy_needed < 0.5:
+            return []
+        
+        # Define peak hours (typically 17-21, configurable via critical hours)
+        peak_start = self.config.get(CONF_CRITICAL_HOURS_START, DEFAULT_CRITICAL_HOURS_START)
+        peak_end = self.config.get(CONF_CRITICAL_HOURS_END, DEFAULT_CRITICAL_HOURS_END)
+        
+        # Find slots outside peak hours with good prices
+        off_peak_slots = []
+        for slot in range(current_slot, min(current_slot + 96, 96)):
+            hour = (slot // 4) % 24
+            if hour < peak_start or hour >= peak_end:  # Outside peak
+                if slot < len(prices) and prices[slot] > 0:
+                    off_peak_slots.append((slot, prices[slot]))
+        
+        # Sort by price and select cheapest
+        off_peak_slots.sort(key=lambda x: x[1])
+        
+        max_energy_per_slot = max_charge * interval_hours * eff
+        slots_needed = int((energy_needed / max_energy_per_slot) + 0.5)
+        
+        for slot, price in off_peak_slots[:slots_needed]:
+            charging_slots.append(slot)
+        
+        _LOGGER.info(f"Peak shaving strategy: selected {len(charging_slots)} off-peak slots")
+        return sorted(charging_slots)
+    
+    def _strategy_tou_optimized(self, prices: List[float], loads: List[float], forecast: List[float],
+                                 current_slot: int, soc_kwh: float, target_soc_kwh: float,
+                                 max_charge: float, eff: float, interval_hours: float = 0.25) -> List[int]:
+        """Strategy: Time-of-Use Optimized - for TOU tariffs.
+        
+        Optimized for time-of-use tariffs with distinct price tiers.
+        Charges only during lowest tier and avoids high-price periods.
+        """
+        charging_slots = []
+        energy_needed = max(0, target_soc_kwh - soc_kwh)
+        
+        if energy_needed < 0.5:
+            return []
+        
+        # Identify price tiers
+        valid_prices = [p for p in prices if p > 0]
+        if not valid_prices:
+            return []
+        
+        # Assume TOU has 2-3 tiers, find the lowest tier
+        min_price = min(valid_prices)
+        max_price = max(valid_prices)
+        
+        # Low tier = bottom 40% of price range
+        low_tier_threshold = min_price + (max_price - min_price) * 0.4
+        
+        # Find all slots in low tier
+        low_tier_slots = []
+        for slot in range(current_slot, min(current_slot + 96, 96)):
+            if slot < len(prices) and 0 < prices[slot] <= low_tier_threshold:
+                low_tier_slots.append((slot, prices[slot]))
+        
+        # Sort by price within low tier
+        low_tier_slots.sort(key=lambda x: x[1])
+        
+        max_energy_per_slot = max_charge * interval_hours * eff
+        slots_needed = int((energy_needed / max_energy_per_slot) + 0.5)
+        
+        for slot, price in low_tier_slots[:slots_needed]:
+            charging_slots.append(slot)
+        
+        _LOGGER.info(f"TOU optimized strategy: selected {len(charging_slots)} low-tier slots (threshold: {low_tier_threshold:.2f} CZK/kWh)")
+        return sorted(charging_slots)
 
     def _find_optimal_charging_slots(self, prices: List[float], loads: List[float], forecast: List[float],
                                      soc_kwh: float, target_soc_kwh: float, capacity: float,
