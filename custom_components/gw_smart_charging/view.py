@@ -536,6 +536,101 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                     </div>
                 </div>
                 
+                <!-- NEW v2.3.0: Charging Strategies Quick Reference -->
+                <div class="section">
+                    <h2>🎯 Charging Strategies Quick Reference</h2>
+                    <p>Choose the strategy that best fits your energy tariff and usage pattern:</p>
+                    
+                    <div style="display: grid; gap: 15px; margin-top: 20px;">
+                        <div style="padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white;">
+                            <h3 style="margin: 0 0 10px 0;">🎨 Dynamic (Default)</h3>
+                            <p style="margin: 5px 0; font-size: 14px;">
+                                <strong>Best for:</strong> Most users, variable pricing<br>
+                                <strong>How it works:</strong> Analyzes prices, forecasts, and ML patterns to find optimal charging times. Waits for lowest prices in trending markets.<br>
+                                <strong>Pros:</strong> Maximum savings, intelligent optimization<br>
+                                <strong>Cons:</strong> Less predictable charging times
+                            </p>
+                        </div>
+                        
+                        <div style="padding: 15px; background: #e3f2fd; border-left: 4px solid #2196F3; border-radius: 8px;">
+                            <h3 style="margin: 0 0 10px 0; color: #1976D2;">⏰ 4/6 Lowest Hours</h3>
+                            <p style="margin: 5px 0; font-size: 14px; color: #333;">
+                                <strong>Best for:</strong> Predictable charging, medium batteries<br>
+                                <strong>How it works:</strong> Always charges during 4 (or 6) cheapest hours in next 24h<br>
+                                <strong>Pros:</strong> Simple, predictable, guaranteed charging<br>
+                                <strong>Cons:</strong> May miss optimization opportunities
+                            </p>
+                        </div>
+                        
+                        <div style="padding: 15px; background: #f3e5f5; border-left: 4px solid #9c27b0; border-radius: 8px;">
+                            <h3 style="margin: 0 0 10px 0; color: #7b1fa2;">🎛️ Nanogreen Only</h3>
+                            <p style="margin: 5px 0; font-size: 14px; color: #333;">
+                                <strong>Best for:</strong> Nanogreen users, trust external service<br>
+                                <strong>How it works:</strong> Charges when Nanogreen sensor indicates cheapest hours<br>
+                                <strong>Pros:</strong> Leverages external optimization<br>
+                                <strong>Cons:</strong> Depends on Nanogreen availability
+                            </p>
+                        </div>
+                        
+                        <div style="padding: 15px; background: #fff3e0; border-left: 4px solid #ff9800; border-radius: 8px;">
+                            <h3 style="margin: 0 0 10px 0; color: #f57c00;">💸 Price Threshold</h3>
+                            <p style="margin: 5px 0; font-size: 14px; color: #333;">
+                                <strong>Best for:</strong> Very cheap night tariffs, aggressive charging<br>
+                                <strong>How it works:</strong> Charges whenever price drops below "Always Charge Price"<br>
+                                <strong>Pros:</strong> Maximizes cheap electricity usage<br>
+                                <strong>Cons:</strong> May overcharge if prices frequently low
+                            </p>
+                        </div>
+                        
+                        <div style="padding: 15px; background: #e8f5e9; border-left: 4px solid #4CAF50; border-radius: 8px;">
+                            <h3 style="margin: 0 0 10px 0; color: #2e7d32;">🌞 Solar Priority</h3>
+                            <p style="margin: 5px 0; font-size: 14px; color: #333;">
+                                <strong>Best for:</strong> Maximizing self-consumption, sunny locations<br>
+                                <strong>How it works:</strong> Prioritizes charging when solar forecast is high<br>
+                                <strong>Pros:</strong> Minimal grid usage, green energy focus<br>
+                                <strong>Cons:</strong> Weather dependent
+                            </p>
+                        </div>
+                        
+                        <div style="padding: 15px; background: #fce4ec; border-left: 4px solid #e91e63; border-radius: 8px;">
+                            <h3 style="margin: 0 0 10px 0; color: #c2185b;">⚡ Peak Shaving</h3>
+                            <p style="margin: 5px 0; font-size: 14px; color: #333;">
+                                <strong>Best for:</strong> Demand charges, peak period tariffs<br>
+                                <strong>How it works:</strong> Avoids grid during peak hours (uses critical hours setting)<br>
+                                <strong>Pros:</strong> Reduces demand charges<br>
+                                <strong>Cons:</strong> Requires proper critical hours configuration
+                            </p>
+                        </div>
+                        
+                        <div style="padding: 15px; background: #e0f2f1; border-left: 4px solid #009688; border-radius: 8px;">
+                            <h3 style="margin: 0 0 10px 0; color: #00695c;">📊 TOU Optimized</h3>
+                            <p style="margin: 5px 0; font-size: 14px; color: #333;">
+                                <strong>Best for:</strong> Time-of-Use tariffs, multi-tier pricing<br>
+                                <strong>How it works:</strong> Charges only in cheapest 40% of price range<br>
+                                <strong>Pros:</strong> Perfect for TOU tariffs<br>
+                                <strong>Cons:</strong> Requires clear price tiers
+                            </p>
+                        </div>
+                        
+                        <div style="padding: 15px; background: #fff9c4; border-left: 4px solid #fbc02d; border-radius: 8px;">
+                            <h3 style="margin: 0 0 10px 0; color: #f57f17;">🤖 Adaptive Smart</h3>
+                            <p style="margin: 5px 0; font-size: 14px; color: #333;">
+                                <strong>Best for:</strong> Regular usage patterns, ML enthusiasts<br>
+                                <strong>How it works:</strong> Learns from consumption and charges before high usage<br>
+                                <strong>Pros:</strong> Self-optimizing, predictive<br>
+                                <strong>Cons:</strong> Needs 30 days to learn patterns
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 20px; padding: 15px; background: #f0f7ff; border-left: 4px solid #2196F3; border-radius: 4px;">
+                        <p style="margin: 0; color: #1976D2;">
+                            <strong>💡 Recommendation:</strong> Start with "Dynamic" strategy. It works well for most scenarios. 
+                            Use test mode to compare different strategies before committing to one.
+                        </p>
+                    </div>
+                </div>
+                
                 <!-- NEW v2.3.0: Current Configuration Status -->
                 <div class="section">
                     <h2>⚙️ Current Configuration</h2>
@@ -604,6 +699,73 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                         </ul>
                         <p style="margin: 5px 0; color: #555;">
                             <strong>Current Status:</strong> Test mode is <strong style="color: {'#f57c00' if test_mode else '#4CAF50'};">{'ENABLED - Integration is in simulation mode' if test_mode else 'DISABLED - Integration is controlling the battery'}</strong>
+                        </p>
+                    </div>
+                    
+                    <!-- NEW v2.3.0: Testing Scenarios -->
+                    <div style="margin-top: 20px; padding: 15px; background: #e8f5e9; border-left: 4px solid #4CAF50; border-radius: 4px;">
+                        <h3 style="margin: 0 0 10px 0; color: #2e7d32;">🎯 Testing Scenarios</h3>
+                        <p style="margin: 5px 0; color: #555;"><strong>Try these test scenarios to validate your configuration:</strong></p>
+                        
+                        <div style="margin-top: 15px;">
+                            <details style="margin-bottom: 10px;">
+                                <summary style="cursor: pointer; font-weight: bold; color: #2e7d32;">📊 Scenario 1: Price Threshold Testing</summary>
+                                <div style="padding: 10px; margin-top: 5px; background: white; border-radius: 4px;">
+                                    <p><strong>Goal:</strong> Verify charging activates at correct prices</p>
+                                    <ol style="margin: 5px 0; padding-left: 20px;">
+                                        <li>Enable test mode</li>
+                                        <li>Set "Always Charge Price" to a specific value (e.g., 2.0 CZK/kWh)</li>
+                                        <li>Check dashboard graphs to see when charging would trigger</li>
+                                        <li>Verify it matches hours with price below your threshold</li>
+                                    </ol>
+                                </div>
+                            </details>
+                            
+                            <details style="margin-bottom: 10px;">
+                                <summary style="cursor: pointer; font-weight: bold; color: #2e7d32;">⚡ Scenario 2: Strategy Comparison</summary>
+                                <div style="padding: 10px; margin-top: 5px; background: white; border-radius: 4px;">
+                                    <p><strong>Goal:</strong> Compare different charging strategies</p>
+                                    <ol style="margin: 5px 0; padding-left: 20px;">
+                                        <li>Enable test mode</li>
+                                        <li>Try "4 Lowest Hours" strategy, note the scheduled times</li>
+                                        <li>Switch to "Dynamic" strategy, compare the schedule</li>
+                                        <li>Check which provides better SOC forecast</li>
+                                        <li>Choose the strategy that fits your needs</li>
+                                    </ol>
+                                </div>
+                            </details>
+                            
+                            <details style="margin-bottom: 10px;">
+                                <summary style="cursor: pointer; font-weight: bold; color: #2e7d32;">🔋 Scenario 3: Battery Limits Testing</summary>
+                                <div style="padding: 10px; margin-top: 5px; background: white; border-radius: 4px;">
+                                    <p><strong>Goal:</strong> Ensure SOC stays within limits</p>
+                                    <ol style="margin: 5px 0; padding-left: 20px;">
+                                        <li>Enable test mode</li>
+                                        <li>Set Min SOC = 10%, Max SOC = 95%</li>
+                                        <li>Check SOC forecast graph (orange line)</li>
+                                        <li>Verify it never goes below 10% or above 95%</li>
+                                        <li>Adjust target SOC if needed</li>
+                                    </ol>
+                                </div>
+                            </details>
+                            
+                            <details style="margin-bottom: 10px;">
+                                <summary style="cursor: pointer; font-weight: bold; color: #2e7d32;">🌅 Scenario 4: Critical Hours Validation</summary>
+                                <div style="padding: 10px; margin-top: 5px; background: white; border-radius: 4px;">
+                                    <p><strong>Goal:</strong> Verify higher SOC during peak hours</p>
+                                    <ol style="margin: 5px 0; padding-left: 20px;">
+                                        <li>Enable test mode</li>
+                                        <li>Set Critical Hours: 17-21, Critical SOC: 80%</li>
+                                        <li>Check SOC forecast for hours 17:00-21:00</li>
+                                        <li>Verify SOC is maintained at 80% during this period</li>
+                                        <li>Check that charging happens before if needed</li>
+                                    </ol>
+                                </div>
+                            </details>
+                        </div>
+                        
+                        <p style="margin-top: 15px; color: #555; font-size: 14px;">
+                            <strong>💡 Tip:</strong> After testing, disable test mode to activate real battery control. Monitor the first 24 hours to ensure expected behavior.
                         </p>
                     </div>
                 </div>
