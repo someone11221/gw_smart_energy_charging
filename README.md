@@ -1,6 +1,6 @@
 # GW Smart Charging
 
-Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 1.7.0** - autonomní služba s denními statistikami, predikcemi a funkčním ApexCharts dashboardem.
+Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 1.9.0** - Custom Lovelace card, Options Flow a panel v postranní liště.
 
 ## Funkce
 
@@ -14,14 +14,18 @@ Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie Goo
 ⚡ **Critical Hours** - Vyšší SOC během peak hours  
 🤖 **Script automation** - Automatické volání script.nabijeni_on/off  
 📈 **Real-time monitoring** - Battery power & grid import  
-🔍 **Diagnostika** - Kompletní přehled stavu a logiky integrace  
+🔍 **Diagnostika** - Kompletní přehled stavu a logiky integrace s aktuálním SoC  
 🔄 **W→kWh konverze** - Automatický převod jednotek pro správnou logiku  
 📉 **Sledování nabíjení/vybíjení** - Today's charge/discharge tracking  
-🎨 **Funkční ApexCharts Dashboard** - Grafy optimalizace s data_generator pro v1.7.0  
 🛠️ **Služba pro automatizace** - `get_charging_schedule` s detailními údaji  
 📝 **Activity log** - Sledování změn režimů a stavu systému  
 💡 **Prediction sensor** - Konfidence ML a forecastu, kvalita predikce  
 💸 **Savings tracking** - Úspory oproti pausálnímu tarifu  
+📱 **Device Panel** - Kompletní integrace v Zařízení a Služby  
+🎨 **Zjednodušené entity** - Pouze 9 základních senzorů + 1 switch  
+🎴 **Custom Lovelace Card** - Profesionální karta s kompaktním přehledem (v1.9.0)  
+⚙️ **Options Flow** - Rekonfigurace bez reinstalace (v1.9.0)  
+🔲 **Panel v postranní liště** - Přímý přístup k dashboardu (v1.9.0)  
 
 ## Instalace
 
@@ -62,7 +66,123 @@ Integrace poskytuje přehledný dashboard podobný open-meteo integraci:
 
 Dashboard je dostupný na: `/api/gw_smart_charging/dashboard`
 
-## Nové v1.6.0
+**NOVINKA v1.9.0**: Panel je nyní integrován přímo v postranní liště Home Assistentu! Klikněte na ikonu "GW Smart Charging" v menu pro přístup k dashboardu.
+
+## Custom Lovelace Card (v1.9.0)
+
+Integrace poskytuje vlastní Lovelace kartu pro kompaktní přehled všech klíčových metrik:
+
+### Použití karty
+```yaml
+type: custom:gw-smart-charging-card
+entity: sensor.gw_smart_charging_diagnostics
+```
+
+### Funkce karty
+- ⚡ **Real-time SOC** - Vizuální gradient lišta (červená→žlutá→zelená)
+- 📊 **Klíčové metriky** - Peak forecast, aktuální cena, plánované nabíjení, další nabíjení
+- 🎨 **Barevné indikátory** - Režimy nabíjení s barvami (grid_charge, solar_charge, battery_discharge, self_consume)
+- 🔄 **Integrovaný switch** - Ovládání automatického nabíjení přímo z karty
+- 📱 **Responzivní design** - Funguje na desktop i mobile
+
+Karta je automaticky registrována po instalaci integrace.
+
+## Rekonfigurace (v1.9.0)
+
+**Options Flow** umožňuje změnit konfiguraci bez reinstalace:
+
+1. Přejděte na Nastavení → Zařízení a Služby
+2. Najděte "GW Smart Charging"
+3. Klikněte na **KONFIGURACE**
+4. Změňte senzory nebo parametry
+5. Uložte - integrace se automaticky reloadne
+
+Žádná ztráta dat, žádná reinstalace!
+
+## Senzory (v1.8.0)
+
+Integrace poskytuje **9 základních senzorů** a **1 switch**:
+
+### Hlavní senzory
+1. **`sensor.gw_smart_charging_forecast`** - Solární forecast s cenami elektřiny
+2. **`sensor.gw_smart_charging_schedule`** - Aktuální plán nabíjení
+3. **`sensor.gw_smart_charging_soc_forecast`** - Předpověď SOC s daty pro grafy
+4. **`sensor.gw_smart_charging_battery_power`** - Výkon baterie a dnešní součty
+
+### Diagnostika a statistiky
+5. **`sensor.gw_smart_charging_diagnostics`** - Diagnostika systému s aktuálním SoC
+6. **`sensor.gw_smart_charging_daily_statistics`** - Denní statistiky a úspory
+7. **`sensor.gw_smart_charging_prediction`** - Kvalita ML predikce
+
+### Automatizace
+8. **`sensor.gw_smart_charging_next_charge`** - Další plánované nabíjení/vybíjení
+9. **`sensor.gw_smart_charging_activity_log`** - Historie aktivit
+
+### Ovládání
+10. **`switch.gw_smart_charging_auto_charging`** - Automatické řízení
+
+**Poznámka:** Data z předchozích 11 senzorů (series, today charge/discharge, atd.) jsou nyní dostupná jako atributy konsolidovaných senzorů. Viz `RELEASE_NOTES_v1.8.0.md` pro detaily migrace.
+
+## Dokumentace logiky nabíjení
+
+Detailní dokumentace logiky nabíjení je v `/CHARGING_LOGIC.md`. Tento dokument obsahuje:
+- Popis všech použitých senzorů a jejich účelu
+- Krok za krokem proces rozhodování
+- Příklady scénářů pro různé denní doby
+- Vysvětlení všech režimů nabíjení
+- Konfigurace parametrů
+
+## Nové v1.9.0
+
+### Custom Lovelace Card
+- **Profesionální karta** s kompaktním přehledem všech metrik
+- **Vizuální SOC lišta** s gradientem (červená→žlutá→zelená)
+- **Klíčové metriky** na jednom místě
+- **Barevné indikátory** režimů nabíjení
+- **Integrovaný switch** pro ovládání
+
+### Panel v Postranní Liště
+- **Přímý přístup** k dashboardu z menu
+- **Ikona baterie** v postranní liště
+- **Dostupné všem uživatelům** (ne jen admin)
+
+### Options Flow
+- **Rekonfigurace bez reinstalace** - změňte senzory/parametry přes UI
+- **Automatické reload** po změně
+- **Žádná ztráta dat** při úpravě konfigurace
+- Cesta: Nastavení → Zařízení a Služby → GW Smart Charging → KONFIGURACE
+
+### Energy Dashboard Integrace
+- **Proper device_class** na všech energetických senzorech
+- **State_class** pro správné měření
+- **Připraveno pro HA Energy Dashboard**
+
+## Nové v1.8.0
+
+### Device Panel Integrace
+Integrace se nyní zobrazuje v panelu Zařízení a Služby:
+- Všechny entity přístupné z jednoho místa
+- Přehledná organizace senzorů a ovládání
+- Snadná diagnostika a konfigurace
+
+### Konsolidace entit
+- **Zredukováno z 21 na 10 entit** - Jednodušší přehled
+- **Série data** - Přesunuta do atributů `sensor.gw_smart_charging_soc_forecast`
+- **Today's totals** - Dostupné v atributech `sensor.gw_smart_charging_battery_power`
+- **Ceny** - Sloučeny do `sensor.gw_smart_charging_forecast`
+- **Next periods** - Sloučeny do `sensor.gw_smart_charging_next_charge`
+
+### Opravy
+- **Diagnostika** - Nyní správně zobrazuje aktuální SoC ze `sensor.battery_state_of_charge`
+- **Lepší pochopitelnost** - Jasné názvy a popisy senzorů
+
+### Dokumentace
+- **CHARGING_LOGIC.md** - Kompletní dokumentace logiky nabíjení
+- **RELEASE_NOTES_v1.8.0.md** - Detailní release notes s migrační příručkou
+
+## Release Notes
+
+### v1.8.0 (Entity Consolidation & Device Integration Release)
 
 ### Služba pro automatizace
 Nová služba `gw_smart_charging.get_charging_schedule` poskytuje detailní informace o plánu nabíjení:
@@ -92,6 +212,16 @@ Více informací v `FEATURE_SERVICE_v1.6.0.md`.
 Detailní dokumentace je v `/custom_components/gw_smart_charging/README.md`
 
 ## Release Notes
+
+### v1.8.0 (Entity Consolidation & Device Integration Release)
+- 📱 **Device Panel** - Plná integrace do Zařízení a Služby v Home Assistentu
+- 🎯 **Konsolidace entit** - Snížení z 21 na 10 entit pro lepší přehlednost
+- 🔧 **Oprava diagnostiky** - Správné zobrazení aktuálního SoC v diagnostickém senzoru
+- 📚 **Dokumentace logiky** - Nový soubor CHARGING_LOGIC.md s kompletním popisem
+- 📊 **Série data v atributech** - Grafy dostupné v atributech `soc_forecast` senzoru
+- 💡 **Lepší pochopitelnost** - Jasné názvy senzorů a jejich účel
+- 🔄 **Migrace** - Data z odstraněných senzorů dostupná v konsolidovaných atributech
+- ✨ **Device Info** - Všechny entity nyní mají device_info pro správné seskupení
 
 ### v1.7.0 (Autonomous Service & Statistics Release)
 - 🤖 **Autonomní služba** - Integrace funguje plně autonomně bez zásahu uživatele

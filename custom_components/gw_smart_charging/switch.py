@@ -8,6 +8,7 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.entity import DeviceInfo
 
 from .const import DOMAIN, DEFAULT_NAME, CONF_CHARGING_ON_SCRIPT, CONF_CHARGING_OFF_SCRIPT, CONF_ENABLE_AUTOMATION
 from .coordinator import GWSmartCoordinator
@@ -15,12 +16,24 @@ from .coordinator import GWSmartCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 
+def get_device_info(entry: ConfigEntry) -> DeviceInfo:
+    """Return device info for the integration."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        name=DEFAULT_NAME,
+        manufacturer="GW Energy Solutions",
+        model="Smart Battery Charging Controller",
+        sw_version="1.9.0",
+        configuration_url="https://github.com/someone11221/gw_smart_energy_charging",
+    )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     """Set up switch for the config entry."""
     coordinator: GWSmartCoordinator = hass.data[DOMAIN][entry.entry_id]
 
     entities = [
-        GWSmartChargingSwitch(coordinator, entry.entry_id),
+        GWSmartChargingSwitch(coordinator, entry),
     ]
 
     async_add_entities(entities, True)
@@ -29,15 +42,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 class GWSmartChargingSwitch(CoordinatorEntity, SwitchEntity):
     """Switch that controls battery charging based on optimized schedule."""
 
-    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+    def __init__(self, coordinator: GWSmartCoordinator, entry: ConfigEntry) -> None:
         """Initialize the switch."""
         super().__init__(coordinator)
-        self._entry_id = entry_id
+        self._entry = entry
         self._attr_name = f"{DEFAULT_NAME} Auto Charging"
-        self._attr_unique_id = f"{entry_id}_auto_charging"
+        self._attr_unique_id = f"{entry.entry_id}_auto_charging"
         self._attr_icon = "mdi:battery-charging"
         self._is_on = False
         self._update_from_coordinator()
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device info."""
+        return get_device_info(self._entry)
 
     @callback
     def _handle_coordinator_update(self) -> None:
