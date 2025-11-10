@@ -261,6 +261,108 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                     padding: 20px;
                     font-size: 14px;
                 }}
+                
+                /* Control buttons NEW v1.9.5 */
+                .controls-section {{
+                    background: white;
+                    border-radius: 12px;
+                    padding: 30px;
+                    margin-bottom: 20px;
+                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                }}
+                
+                .control-buttons {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                    gap: 15px;
+                    margin-top: 20px;
+                }}
+                
+                .control-btn {{
+                    padding: 15px 30px;
+                    font-size: 16px;
+                    font-weight: 600;
+                    border: none;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    transition: all 0.3s;
+                    text-decoration: none;
+                    text-align: center;
+                    display: inline-block;
+                }}
+                
+                .control-btn:hover {{
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+                }}
+                
+                .btn-primary {{
+                    background: #4CAF50;
+                    color: white;
+                }}
+                
+                .btn-danger {{
+                    background: #f44336;
+                    color: white;
+                }}
+                
+                .btn-warning {{
+                    background: #ff9800;
+                    color: white;
+                }}
+                
+                .btn-info {{
+                    background: #2196F3;
+                    color: white;
+                }}
+                
+                .prediction-timeline {{
+                    background: #f8f9fa;
+                    border-radius: 8px;
+                    padding: 20px;
+                    margin-top: 20px;
+                }}
+                
+                .timeline-item {{
+                    display: flex;
+                    align-items: center;
+                    gap: 15px;
+                    padding: 10px;
+                    border-left: 4px solid #667eea;
+                    margin-bottom: 10px;
+                    background: white;
+                    border-radius: 4px;
+                }}
+                
+                .timeline-time {{
+                    font-weight: bold;
+                    min-width: 100px;
+                    color: #667eea;
+                }}
+                
+                .timeline-action {{
+                    flex: 1;
+                }}
+                
+                .action-charge {{
+                    color: #4CAF50;
+                    font-weight: 600;
+                }}
+                
+                .action-discharge {{
+                    color: #f44336;
+                    font-weight: 600;
+                }}
+                
+                .action-solar {{
+                    color: #ff9800;
+                    font-weight: 600;
+                }}
+                
+                .action-grid {{
+                    color: #2196F3;
+                    font-weight: 600;
+                }}
             </style>
         </head>
         <body>
@@ -269,7 +371,7 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                     <h1>
                         <span class="icon">🔋</span>
                         GW Smart Charging
-                        <span class="version">v1.5.0</span>
+                        <span class="version">v1.9.5</span>
                     </h1>
                     <p>Advanced battery charging optimization for Home Assistant</p>
                 </div>
@@ -351,6 +453,36 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                     </div>
                 </div>
                 
+                <!-- NEW v1.9.5: Control Panel -->
+                <div class="controls-section">
+                    <h2>🎛️ Control Panel</h2>
+                    <p>Quick controls for the integration</p>
+                    <div class="control-buttons">
+                        <a href="/config/integrations/integration/gw_smart_charging" class="control-btn btn-info">
+                            ⚙️ Configure Integration
+                        </a>
+                        <button class="control-btn btn-primary" onclick="toggleIntegration(true)">
+                            ✅ Activate Integration
+                        </button>
+                        <button class="control-btn btn-danger" onclick="toggleIntegration(false)">
+                            🛑 Deactivate Integration
+                        </button>
+                        <button class="control-btn btn-warning" onclick="toggleTestMode()">
+                            🧪 Toggle Test Mode
+                        </button>
+                    </div>
+                    <div id="control-status" style="margin-top: 15px; padding: 10px; border-radius: 5px; display: none;"></div>
+                </div>
+                
+                <!-- NEW v1.9.5: 24h Prediction Plan -->
+                <div class="section">
+                    <h2>🔮 24-Hour Prediction Plan</h2>
+                    <p>Next 24 hours charging/discharging plan (updated every 15 minutes)</p>
+                    <div class="prediction-timeline" id="prediction-timeline">
+                        <p style="color: #666;">Loading prediction data...</p>
+                    </div>
+                </div>
+                
                 <div class="section">
                     <h2>🎨 Available Sensors</h2>
                     <div class="entity-list">
@@ -405,10 +537,120 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                 </div>
                 
                 <div class="footer">
-                    <p>GW Smart Charging v1.5.0 | © 2024 | Created for Home Assistant</p>
+                    <p>GW Smart Charging v1.9.5 | © 2024 | Created for Home Assistant</p>
                     <p style="margin-top: 10px;">For documentation and support, visit <a href="https://github.com/someone11221/gw_smart_energy_charging" style="color: white; text-decoration: underline;">GitHub Repository</a></p>
                 </div>
             </div>
+            
+            <!-- NEW v1.9.5: JavaScript for controls and prediction timeline -->
+            <script>
+                // Toggle integration on/off
+                async function toggleIntegration(activate) {{
+                    const statusDiv = document.getElementById('control-status');
+                    const entityId = 'switch.gw_smart_charging_auto_charging';
+                    
+                    try {{
+                        const response = await fetch('/api/services/switch/' + (activate ? 'turn_on' : 'turn_off'), {{
+                            method: 'POST',
+                            headers: {{
+                                'Content-Type': 'application/json',
+                            }},
+                            body: JSON.stringify({{
+                                entity_id: entityId
+                            }})
+                        }});
+                        
+                        if (response.ok) {{
+                            statusDiv.style.display = 'block';
+                            statusDiv.style.background = '#4CAF50';
+                            statusDiv.style.color = 'white';
+                            statusDiv.textContent = activate ? '✅ Integration activated successfully' : '🛑 Integration deactivated successfully';
+                            setTimeout(() => {{ statusDiv.style.display = 'none'; }}, 5000);
+                        }} else {{
+                            throw new Error('Failed to toggle integration');
+                        }}
+                    }} catch (error) {{
+                        statusDiv.style.display = 'block';
+                        statusDiv.style.background = '#f44336';
+                        statusDiv.style.color = 'white';
+                        statusDiv.textContent = '❌ Error: ' + error.message;
+                    }}
+                }}
+                
+                // Toggle test mode
+                async function toggleTestMode() {{
+                    const statusDiv = document.getElementById('control-status');
+                    statusDiv.style.display = 'block';
+                    statusDiv.style.background = '#ff9800';
+                    statusDiv.style.color = 'white';
+                    statusDiv.textContent = '🧪 Test mode feature coming soon - configure via integration settings';
+                    setTimeout(() => {{ statusDiv.style.display = 'none'; }}, 5000);
+                }}
+                
+                // Load and display prediction timeline
+                async function loadPredictionTimeline() {{
+                    const timeline = document.getElementById('prediction-timeline');
+                    
+                    try {{
+                        const response = await fetch('/api/states/sensor.gw_smart_charging_schedule');
+                        const data = await response.json();
+                        
+                        if (data && data.attributes && data.attributes.schedule) {{
+                            const schedule = data.attributes.schedule;
+                            let html = '';
+                            
+                            // Group by hours and show major actions
+                            let lastMode = null;
+                            let groupStart = null;
+                            
+                            schedule.forEach((slot, idx) => {{
+                                const mode = slot.mode || 'idle';
+                                const time = slot.time || '';
+                                const soc = slot.soc_pct_end || 0;
+                                const price = slot.price_czk_kwh || 0;
+                                
+                                // Only show significant mode changes
+                                if (mode !== lastMode && mode !== 'idle' && mode !== 'self_consume') {{
+                                    let actionClass = 'action-grid';
+                                    let actionText = '';
+                                    
+                                    if (mode.includes('charge')) {{
+                                        actionClass = 'action-charge';
+                                        actionText = mode.includes('solar') ? '🌞 Charge from Solar' : '⚡ Charge from Grid';
+                                    }} else if (mode.includes('discharge')) {{
+                                        actionClass = 'action-discharge';
+                                        actionText = '🔋 Discharge Battery';
+                                    }}
+                                    
+                                    html += `
+                                        <div class="timeline-item">
+                                            <div class="timeline-time">${{time}}</div>
+                                            <div class="timeline-action ${{actionClass}}">${{actionText}}</div>
+                                            <div style="min-width: 100px;">SOC: ${{soc.toFixed(1)}}%</div>
+                                            <div style="min-width: 100px;">Price: ${{price.toFixed(2)}} CZK</div>
+                                        </div>
+                                    `;
+                                    lastMode = mode;
+                                }}
+                            }});
+                            
+                            if (html) {{
+                                timeline.innerHTML = html;
+                            }} else {{
+                                timeline.innerHTML = '<p style="color: #666;">No significant charging/discharging actions planned for next 24h</p>';
+                            }}
+                        }} else {{
+                            timeline.innerHTML = '<p style="color: #666;">Schedule data not available</p>';
+                        }}
+                    }} catch (error) {{
+                        timeline.innerHTML = '<p style="color: #f44336;">Error loading prediction: ' + error.message + '</p>';
+                    }}
+                }}
+                
+                // Load prediction on page load and refresh every 15 minutes
+                loadPredictionTimeline();
+                setInterval(loadPredictionTimeline, 15 * 60 * 1000); // Refresh every 15 minutes
+            </script>
         </body>
         </html>
         """

@@ -1,6 +1,6 @@
 # GW Smart Charging
 
-Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 1.9.0** - Custom Lovelace card, Options Flow a panel v postranní liště.
+Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 1.9.5** - Optimální výběr času nabíjení, ovládací panel, 24h predikce.
 
 ## Funkce
 
@@ -23,9 +23,12 @@ Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie Goo
 💸 **Savings tracking** - Úspory oproti pausálnímu tarifu  
 📱 **Device Panel** - Kompletní integrace v Zařízení a Služby  
 🎨 **Zjednodušené entity** - Pouze 9 základních senzorů + 1 switch  
-🎴 **Custom Lovelace Card** - Profesionální karta s kompaktním přehledem (v1.9.0)  
+🎴 **Custom Lovelace Card** - Profesionální karta s kompaktním přehledem a 24h predikcí (v1.9.5)  
 ⚙️ **Options Flow** - Rekonfigurace bez reinstalace (v1.9.0)  
 🔲 **Panel v postranní liště** - Přímý přístup k dashboardu (v1.9.0)  
+🧠 **Optimální nabíjení** - Čeká na nejlevnější hodinu při klesající ceně (v1.9.5)  
+🎛️ **Ovládací panel** - Aktivace/deaktivace a konfigurace z dashboardu (v1.9.5)  
+🔮 **24h predikce** - Vizualizace plánu nabíjení/vybíjení na další den (v1.9.5)  
 
 ## Instalace
 
@@ -131,6 +134,48 @@ Detailní dokumentace logiky nabíjení je v `/CHARGING_LOGIC.md`. Tento dokumen
 - Příklady scénářů pro různé denní doby
 - Vysvětlení všech režimů nabíjení
 - Konfigurace parametrů
+
+## Nové v1.9.5
+
+### Optimální Načasování Nabíjení
+- **Detekce cenového trendu** - Rozpozná klesající tendenci cen elektřiny
+- **Čekání na minimum** - Místo nabíjení při první levné hodině čeká na nejlevnější
+- **Maximální úspory** - Vybírá optimální okamžik pro start nabíjení
+- **Inteligentní okna** - Balancuje mezi úsporou a potřebou nabít včas
+
+### Ovládací Panel v Dashboardu
+- ✅ **Tlačítko Aktivace** - Zapnutí automatického nabíjení jedním kliknutím
+- 🛑 **Tlačítko Deaktivace** - Vypnutí automatického nabíjení
+- ⚙️ **Přímý odkaz na konfiguraci** - Rychlý přístup k nastavení
+- 🧪 **Testovací režim** - Příprava na budoucí testování strategií
+
+### 24-hodinová Predikce
+- **Vizuální timeline** - Zobrazení plánovaných akcí na další den
+- **Barevné indikátory** - Nabíjení ze sítě/solaru, vybíjení baterie
+- **SOC prognóza** - Očekávaná úroveň baterie v čase
+- **Automatická aktualizace** - Refresh každých 15 minut
+- **Dostupné na 2 místech:**
+  - Dashboard (`/api/gw_smart_charging/dashboard`)
+  - Lovelace karta
+
+### Vylepšená Lovelace Karta
+- **Integrovaná timeline** - 24h predikce přímo v kartě
+- **Kompaktní zobrazení** - Top 8 významných událostí
+- **Vizuální ikony** - 🌞 Solar, ⚡ Grid, 🔋 Battery
+- **Real-time aktualizace** - Živé sledování změn
+
+### Příklad použití
+```yaml
+# Scénář: Ceny elektřiny klesají přes noc
+# 22:00 = 3.5 CZK, 23:00 = 3.2 CZK, 00:00 = 2.8 CZK, 01:00 = 2.5 CZK
+
+# Staré chování (v1.9.0):
+# Začne nabíjet v 22:00 (první levná hodina)
+
+# Nové chování (v1.9.5):  
+# Detekuje klesající trend → čeká → začne v 01:00
+# Úspora: 1.0 CZK/kWh! ⚡💰
+```
 
 ## Nové v1.9.0
 

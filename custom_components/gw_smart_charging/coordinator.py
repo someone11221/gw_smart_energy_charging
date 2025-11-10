@@ -761,6 +761,90 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                 out.append(0.0)
         return out
 
+    def _find_optimal_charging_slots(self, prices: List[float], loads: List[float], forecast: List[float],
+                                     soc_kwh: float, target_soc_kwh: float, capacity: float,
+                                     max_charge: float, eff: float, interval_hours: float = 0.25) -> List[int]:
+        """Find optimal charging slots considering price trends and energy needs.
+        
+        NEW v1.9.5: Enhanced logic to wait for cheapest prices in decreasing trend.
+        
+        Args:
+            prices: List of prices for 96 slots
+            loads: List of load forecasts for 96 slots
+            forecast: List of PV forecasts for 96 slots
+            soc_kwh: Current battery SOC in kWh
+            target_soc_kwh: Target SOC to reach in kWh
+            capacity: Battery capacity in kWh
+            max_charge: Max charging power in kW
+            eff: Charging efficiency
+            interval_hours: Duration of each slot in hours (0.25 for 15min)
+            
+        Returns:
+            List of slot indices where charging should occur
+        """
+        # Calculate energy deficit that needs to be covered by grid charging
+        energy_needed = max(0, target_soc_kwh - soc_kwh)
+        
+        if energy_needed < 0.5:  # Less than 0.5 kWh needed, no charging
+            return []
+        
+        # Calculate how many slots we need to charge
+        max_energy_per_slot = max_charge * interval_hours * eff
+        slots_needed = int((energy_needed / max_energy_per_slot) + 0.5)
+        
+        if slots_needed <= 0:
+            return []
+        
+        # Find charging windows with price trend analysis
+        charging_slots = []
+        
+        # Group prices into windows and find decreasing trends
+        current_time_slot = datetime.now().hour * 4 + (datetime.now().minute // 15)
+        
+        # Look ahead for next 24 hours (96 slots)
+        valid_slots = []
+        for slot in range(current_time_slot, min(current_time_slot + 96, 96)):
+            price = prices[slot] if slot < len(prices) else 999.0
+            if price > 0:  # Valid price
+                valid_slots.append((slot, price))
+        
+        if not valid_slots:
+            return []
+        
+        # Sort by price to find cheapest slots
+        valid_slots.sort(key=lambda x: x[1])
+        
+        # NEW v1.9.5: Check for decreasing price trend
+        # If prices are generally decreasing, wait for the minimum
+        if len(valid_slots) >= 4:
+            # Calculate trend: compare first quarter vs last quarter average
+            quarter_size = len(valid_slots) // 4
+            early_avg = sum(p for _, p in valid_slots[:quarter_size]) / quarter_size
+            late_avg = sum(p for _, p in valid_slots[-quarter_size:]) / quarter_size
+            
+            is_decreasing_trend = late_avg < early_avg * 0.95  # 5% decrease = trend
+            
+            if is_decreasing_trend:
+                _LOGGER.info("Detected decreasing price trend - waiting for minimum prices")
+                # Take cheapest slots from the later half (where prices are lower)
+                midpoint = len(valid_slots) // 2
+                cheapest_slots = [s for s, p in valid_slots[midpoint:midpoint + slots_needed]]
+            else:
+                # Normal case: just take cheapest slots overall
+                cheapest_slots = [s for s, p in valid_slots[:slots_needed]]
+        else:
+            cheapest_slots = [s for s, p in valid_slots[:slots_needed]]
+        
+        # Verify slots are within reasonable time window (next 8 hours for non-critical)
+        max_wait_slots = 32  # 8 hours
+        filtered_slots = [s for s in cheapest_slots if s <= current_time_slot + max_wait_slots]
+        
+        if not filtered_slots and cheapest_slots:
+            # If all slots are too far, take at least the closest cheapest one
+            filtered_slots = sorted(cheapest_slots)[:max(1, slots_needed // 2)]
+        
+        return sorted(filtered_slots)
+    
     def _compute_schedule_15min(self, forecast: List[float], prices: List[float], loads: List[float]) -> List[Dict[str, Any]]:
         """Compute optimized 15-min charging schedule with hysteresis and critical hours support.
         
@@ -768,15 +852,17 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         { slot, time, mode, pv_power_kW, load_kW, net_pv_kW, price_czk_kwh, 
           planned_charge_kW, soc_kwh_end, soc_pct_end, should_charge }
         
-        Logic:
+        Logic (ENHANCED v1.9.5):
         1. Always use solar energy first (self-consumption priority)
-        2. Charge from grid only when price is below threshold AND battery needs charging
-        3. Never charge if price above never_charge_price threshold
-        4. Always charge if price below always_charge_price AND battery below target
-        5. Respect min/max SOC limits
-        6. Consider solar forecast to avoid charging from grid if solar will cover needs
-        7. Apply hysteresis to prevent rapid switching near price thresholds
-        8. Maintain higher SOC during critical hours
+        2. Find optimal charging windows considering price trends (NEW)
+        3. Wait for cheapest prices in decreasing trend scenarios (NEW)
+        4. Charge from grid only when price is below threshold AND battery needs charging
+        5. Never charge if price above never_charge_price threshold
+        6. Always charge if price below always_charge_price AND battery below target
+        7. Respect min/max SOC limits
+        8. Consider solar forecast to avoid charging from grid if solar will cover needs
+        9. Apply hysteresis to prevent rapid switching near price thresholds
+        10. Maintain higher SOC during critical hours
         """
         # Read config params
         capacity = float(self.config.get(CONF_BATTERY_CAPACITY, DEFAULT_BATTERY_CAPACITY))
@@ -827,6 +913,13 @@ class GWSmartCoordinator(DataUpdateCoordinator):
 
         schedule: List[Dict[str, Any]] = []
         current_should_charge = False
+        
+        # NEW v1.9.5: Pre-compute optimal charging slots using price trend analysis
+        optimal_charging_slots = self._find_optimal_charging_slots(
+            prices, loads, forecast, soc_kwh, target_soc_kwh, 
+            capacity, max_charge, eff, interval_hours=0.25
+        )
+        _LOGGER.debug(f"Optimal charging slots identified: {optimal_charging_slots}")
         
         # First pass: identify cheap charging opportunities and solar surplus
         for slot in range(96):
@@ -886,7 +979,11 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                 should_charge = False
             
             # Priority 3: Grid charging based on price thresholds with hysteresis
+            # NEW v1.9.5: Use optimal slot selection for grid charging
             if soc_kwh < effective_target_soc_kwh:
+                # Check if this slot is in optimal charging slots (NEW v1.9.5)
+                is_optimal_slot = slot in optimal_charging_slots
+                
                 # Check price conditions with hysteresis
                 if price > 0:
                     if price <= always_charge_threshold:
@@ -902,61 +999,25 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                             should_charge = True
                             current_should_charge = True
                     
-                    elif price < never_charge_threshold:
-                        # Moderate price - smart optimization based on future needs
-                        # Calculate expected energy deficit considering:
-                        # 1. Future solar generation
-                        # 2. Future consumption (load)
-                        # 3. Current battery level
-                        # 4. Battery capacity constraints
-                        
-                        # Look ahead for remaining day
-                        remaining_slots = len(schedule) - slot
-                        future_solar_kwh = sum(forecast[slot:min(slot + remaining_slots, len(forecast))]) * interval_hours
-                        future_load_kwh = sum(loads[slot:min(slot + remaining_slots, len(loads))]) * interval_hours
-                        
-                        # Expected net energy from solar (after consumption)
-                        expected_net_solar = future_solar_kwh - future_load_kwh
-                        
-                        # Calculate if we need grid charging
-                        # Target: have enough energy to cover deficit + reach target SOC
-                        energy_needed_for_target = target_soc_kwh - soc_kwh
-                        energy_deficit = max(0, -expected_net_solar)  # Only count deficit
-                        
-                        # Total energy needed from grid
-                        total_grid_energy_needed = energy_needed_for_target + energy_deficit
-                        
-                        # Consider battery capacity - don't overcharge
-                        max_energy_to_charge = max_soc_kwh - soc_kwh
-                        should_charge_amount = min(total_grid_energy_needed, max_energy_to_charge)
-                        
-                        # For critical hours, be more aggressive
-                        if is_critical_hour:
-                            # Ensure we reach critical SOC
-                            energy_needed_for_critical = critical_soc_kwh - soc_kwh
-                            if energy_needed_for_critical > 0:
-                                should_charge_amount = max(should_charge_amount, energy_needed_for_critical)
-                        
-                        # Only charge if there's a meaningful need (> 0.5 kWh)
-                        if should_charge_amount > 0.5:
-                            capacity_left_kwh = max_soc_kwh - soc_kwh
-                            if capacity_left_kwh > 0.01:
-                                charge_kw = min(max_charge, capacity_left_kwh / interval_hours)
-                                charge_kwh = charge_kw * interval_hours
-                                stored_kwh = charge_kwh * eff
-                                soc_kwh += stored_kwh
-                                planned_charge_kw = charge_kw
-                                mode = "grid_charge_optimal" if not is_critical_hour else "grid_charge_critical"
-                                should_charge = True
-                                current_should_charge = True
-                                
-                                _LOGGER.debug(
-                                    f"Grid charging slot {slot}: price={price:.2f}, "
-                                    f"future_solar={future_solar_kwh:.2f}, "
-                                    f"future_load={future_load_kwh:.2f}, "
-                                    f"deficit={energy_deficit:.2f}, "
-                                    f"needed={should_charge_amount:.2f} kWh"
-                                )
+                    elif price < never_charge_threshold and is_optimal_slot:
+                        # NEW v1.9.5: Only charge in optimal slots (not just any cheap slot)
+                        # This implements "wait for cheapest price" logic
+                        capacity_left_kwh = max_soc_kwh - soc_kwh
+                        if capacity_left_kwh > 0.01:
+                            charge_kw = min(max_charge, capacity_left_kwh / interval_hours)
+                            charge_kwh = charge_kw * interval_hours
+                            stored_kwh = charge_kwh * eff
+                            soc_kwh += stored_kwh
+                            planned_charge_kw = charge_kw
+                            mode = "grid_charge_optimal" if not is_critical_hour else "grid_charge_critical"
+                            should_charge = True
+                            current_should_charge = True
+                            
+                            _LOGGER.debug(
+                                f"Grid charging optimal slot {slot}: price={price:.2f}, "
+                                f"is_optimal={is_optimal_slot}, "
+                                f"charging={charge_kwh:.2f} kWh"
+                            )
             
             # Ensure SOC stays within bounds
             soc_kwh = max(min_soc_kwh, min(max_soc_kwh, soc_kwh))

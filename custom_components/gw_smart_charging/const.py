@@ -43,6 +43,7 @@ CONF_ENABLE_ML_PREDICTION = "enable_ml_prediction"
 # Automation
 CONF_ENABLE_AUTOMATION = "enable_automation"
 CONF_SWITCH_ON_MEANS_CHARGE = "switch_on_means_charge"
+CONF_TEST_MODE = "test_mode"
 
 # Default values
 DEFAULT_BATTERY_CAPACITY = 17.0
