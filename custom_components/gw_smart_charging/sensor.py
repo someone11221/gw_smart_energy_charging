@@ -23,7 +23,7 @@ def get_device_info(entry: ConfigEntry) -> DeviceInfo:
         name=DEFAULT_NAME,
         manufacturer="GW Energy Solutions",
         model="Smart Battery Charging Controller",
-        sw_version="1.8.0",
+        sw_version="1.9.0",
         configuration_url="https://github.com/someone11221/gw_smart_energy_charging",
     )
 

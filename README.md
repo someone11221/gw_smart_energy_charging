@@ -1,6 +1,6 @@
 # GW Smart Charging
 
-Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 1.8.0** - konsolidované entity s integrací do device panelu a vylepšenou diagnostikou.
+Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 1.9.0** - Custom Lovelace card, Options Flow a panel v postranní liště.
 
 ## Funkce
 
@@ -23,6 +23,9 @@ Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie Goo
 💸 **Savings tracking** - Úspory oproti pausálnímu tarifu  
 📱 **Device Panel** - Kompletní integrace v Zařízení a Služby  
 🎨 **Zjednodušené entity** - Pouze 9 základních senzorů + 1 switch  
+🎴 **Custom Lovelace Card** - Profesionální karta s kompaktním přehledem (v1.9.0)  
+⚙️ **Options Flow** - Rekonfigurace bez reinstalace (v1.9.0)  
+🔲 **Panel v postranní liště** - Přímý přístup k dashboardu (v1.9.0)  
 
 ## Instalace
 
@@ -63,7 +66,38 @@ Integrace poskytuje přehledný dashboard podobný open-meteo integraci:
 
 Dashboard je dostupný na: `/api/gw_smart_charging/dashboard`
 
-**NOVINKA v1.8.0**: Integrace je nyní plně integrována do panelu Zařízení a Služby Home Assistentu. Po instalaci najdete všechny senzory a ovládání na jednom místě v sekci Nastavení → Zařízení a Služby → GW Smart Charging.
+**NOVINKA v1.9.0**: Panel je nyní integrován přímo v postranní liště Home Assistentu! Klikněte na ikonu "GW Smart Charging" v menu pro přístup k dashboardu.
+
+## Custom Lovelace Card (v1.9.0)
+
+Integrace poskytuje vlastní Lovelace kartu pro kompaktní přehled všech klíčových metrik:
+
+### Použití karty
+```yaml
+type: custom:gw-smart-charging-card
+entity: sensor.gw_smart_charging_diagnostics
+```
+
+### Funkce karty
+- ⚡ **Real-time SOC** - Vizuální gradient lišta (červená→žlutá→zelená)
+- 📊 **Klíčové metriky** - Peak forecast, aktuální cena, plánované nabíjení, další nabíjení
+- 🎨 **Barevné indikátory** - Režimy nabíjení s barvami (grid_charge, solar_charge, battery_discharge, self_consume)
+- 🔄 **Integrovaný switch** - Ovládání automatického nabíjení přímo z karty
+- 📱 **Responzivní design** - Funguje na desktop i mobile
+
+Karta je automaticky registrována po instalaci integrace.
+
+## Rekonfigurace (v1.9.0)
+
+**Options Flow** umožňuje změnit konfiguraci bez reinstalace:
+
+1. Přejděte na Nastavení → Zařízení a Služby
+2. Najděte "GW Smart Charging"
+3. Klikněte na **KONFIGURACE**
+4. Změňte senzory nebo parametry
+5. Uložte - integrace se automaticky reloadne
+
+Žádná ztráta dat, žádná reinstalace!
 
 ## Senzory (v1.8.0)
 
@@ -97,6 +131,31 @@ Detailní dokumentace logiky nabíjení je v `/CHARGING_LOGIC.md`. Tento dokumen
 - Příklady scénářů pro různé denní doby
 - Vysvětlení všech režimů nabíjení
 - Konfigurace parametrů
+
+## Nové v1.9.0
+
+### Custom Lovelace Card
+- **Profesionální karta** s kompaktním přehledem všech metrik
+- **Vizuální SOC lišta** s gradientem (červená→žlutá→zelená)
+- **Klíčové metriky** na jednom místě
+- **Barevné indikátory** režimů nabíjení
+- **Integrovaný switch** pro ovládání
+
+### Panel v Postranní Liště
+- **Přímý přístup** k dashboardu z menu
+- **Ikona baterie** v postranní liště
+- **Dostupné všem uživatelům** (ne jen admin)
+
+### Options Flow
+- **Rekonfigurace bez reinstalace** - změňte senzory/parametry přes UI
+- **Automatické reload** po změně
+- **Žádná ztráta dat** při úpravě konfigurace
+- Cesta: Nastavení → Zařízení a Služby → GW Smart Charging → KONFIGURACE
+
+### Energy Dashboard Integrace
+- **Proper device_class** na všech energetických senzorech
+- **State_class** pro správné měření
+- **Připraveno pro HA Energy Dashboard**
 
 ## Nové v1.8.0
 
