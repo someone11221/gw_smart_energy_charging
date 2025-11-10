@@ -1,0 +1,420 @@
+# Example Lovelace Cards for GW Smart Charging v1.7.0
+# =====================================================
+# Kompletní dashboard s funkčními ApexCharts a novými senzory
+
+# KOMPLETNÍ DASHBOARD VIEW
+# -------------------------
+title: GW Smart Charging
+path: gw-charging
+icon: mdi:battery-charging
+badges: []
+cards:
+  # Status Card - Aktuální stav a predikce
+  - type: entities
+    title: "📊 GW Smart Charging - Status & Predikce"
+    show_header_toggle: false
+    entities:
+      - entity: sensor.gw_smart_charging_diagnostics
+        name: Status integrace
+        icon: mdi:information
+      - entity: sensor.gw_smart_charging_prediction
+        name: Kvalita predikce
+        icon: mdi:crystal-ball
+      - type: divider
+      - entity: sensor.gw_smart_charging_schedule
+        name: Aktuální režim
+        icon: mdi:cog
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: should_charge_now
+        name: Mělo by nabíjet
+        icon: mdi:battery-charging
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: current_price
+        name: Aktuální cena
+        suffix: " CZK/kWh"
+        icon: mdi:currency-czk
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: current_soc
+        name: Aktuální SOC
+        suffix: " %"
+        icon: mdi:battery
+      - type: divider
+      - entity: switch.gw_smart_charging_auto_charging
+        name: Automatické nabíjení
+      - entity: sensor.gw_smart_charging_next_grid_charge
+        name: Příští nabíjení
+        icon: mdi:clock-start
+      - entity: sensor.gw_smart_charging_next_battery_discharge
+        name: Příští vybíjení
+        icon: mdi:battery-arrow-down
+
+  # Denní statistiky a úspory
+  - type: entities
+    title: "💰 Denní statistiky a úspory"
+    show_header_toggle: false
+    entities:
+      - entity: sensor.gw_smart_charging_daily_statistics
+        name: Plánované nabíjení ze sítě
+        icon: mdi:lightning-bolt
+      - type: attribute
+        entity: sensor.gw_smart_charging_daily_statistics
+        attribute: planned_solar_charge_kwh
+        name: Plánované nabíjení ze solárů
+        suffix: " kWh"
+        icon: mdi:solar-power
+      - type: attribute
+        entity: sensor.gw_smart_charging_daily_statistics
+        attribute: planned_battery_discharge_kwh
+        name: Plánované vybíjení baterie
+        suffix: " kWh"
+        icon: mdi:battery-arrow-down
+      - type: attribute
+        entity: sensor.gw_smart_charging_daily_statistics
+        attribute: estimated_grid_cost_czk
+        name: Odhadované náklady
+        suffix: " Kč"
+        icon: mdi:currency-czk
+      - type: attribute
+        entity: sensor.gw_smart_charging_daily_statistics
+        attribute: savings_vs_flat_rate
+        name: Úspora oproti pausálu
+        suffix: " Kč"
+        icon: mdi:piggy-bank
+      - type: divider
+      - type: attribute
+        entity: sensor.gw_smart_charging_daily_statistics
+        attribute: actual_today_charge_kwh
+        name: Skutečné nabití dnes
+        suffix: " kWh"
+        icon: mdi:battery-plus
+      - type: attribute
+        entity: sensor.gw_smart_charging_daily_statistics
+        attribute: actual_today_discharge_kwh
+        name: Skutečné vybití dnes
+        suffix: " kWh"
+        icon: mdi:battery-minus
+      - type: attribute
+        entity: sensor.gw_smart_charging_daily_statistics
+        attribute: charge_efficiency_pct
+        name: Efektivita nabíjení
+        suffix: " %"
+        icon: mdi:percent
+
+  # ApexCharts - 24h plán nabíjení s SOC
+  - type: custom:apexcharts-card
+    header:
+      show: true
+      title: "📈 Plán nabíjení a SOC - 24 hodin"
+      show_states: true
+      colorize_states: true
+    graph_span: 24h
+    span:
+      start: day
+    now:
+      show: true
+      label: Nyní
+      color: red
+    yaxis:
+      - id: power
+        decimals: 1
+        min: 0
+        apex_config:
+          title:
+            text: Výkon (kW)
+          labels:
+            formatter: |
+              EVAL:function(value) {
+                return value ? value.toFixed(1) + ' kW' : '0 kW';
+              }
+      - id: soc
+        opposite: true
+        decimals: 0
+        min: 0
+        max: 100
+        apex_config:
+          title:
+            text: SOC (%)
+          labels:
+            formatter: |
+              EVAL:function(value) {
+                return value ? value.toFixed(0) + '%' : '0%';
+              }
+    apex_config:
+      chart:
+        height: 400px
+      legend:
+        show: true
+        position: bottom
+      tooltip:
+        enabled: true
+        shared: true
+        x:
+          format: 'HH:mm'
+    series:
+      - entity: sensor.gw_smart_charging_series_pv
+        name: Solární výroba
+        type: area
+        color: orange
+        opacity: 0.3
+        yaxis_id: power
+        data_generator: |
+          return entity.attributes.data_15min?.map((value, index) => {
+            const timestamp = entity.attributes.timestamps?.[index];
+            return timestamp ? [new Date(timestamp).getTime(), value || 0] : null;
+          }).filter(item => item !== null) || [];
+      
+      - entity: sensor.gw_smart_charging_series_load
+        name: Spotřeba domu
+        type: line
+        color: blue
+        stroke_width: 2
+        yaxis_id: power
+        data_generator: |
+          return entity.attributes.data_15min?.map((value, index) => {
+            const timestamp = entity.attributes.timestamps?.[index];
+            return timestamp ? [new Date(timestamp).getTime(), value || 0] : null;
+          }).filter(item => item !== null) || [];
+      
+      - entity: sensor.gw_smart_charging_series_battery_charge
+        name: Nabíjení baterie
+        type: column
+        color: green
+        yaxis_id: power
+        data_generator: |
+          return entity.attributes.data_15min?.map((value, index) => {
+            const timestamp = entity.attributes.timestamps?.[index];
+            return timestamp ? [new Date(timestamp).getTime(), value || 0] : null;
+          }).filter(item => item !== null) || [];
+      
+      - entity: sensor.gw_smart_charging_series_battery_discharge
+        name: Vybíjení baterie
+        type: column
+        color: red
+        yaxis_id: power
+        data_generator: |
+          return entity.attributes.data_15min?.map((value, index) => {
+            const timestamp = entity.attributes.timestamps?.[index];
+            return timestamp ? [new Date(timestamp).getTime(), value || 0] : null;
+          }).filter(item => item !== null) || [];
+      
+      - entity: sensor.gw_smart_charging_series_soc_forecast
+        name: SOC prognóza
+        type: line
+        color: purple
+        stroke_width: 3
+        curve: smooth
+        yaxis_id: soc
+        data_generator: |
+          return entity.attributes.data_15min?.map((value, index) => {
+            const timestamp = entity.attributes.timestamps?.[index];
+            return timestamp ? [new Date(timestamp).getTime(), value || 0] : null;
+          }).filter(item => item !== null) || [];
+
+  # Ceny elektřiny s prahy a plánovaným nabíjením
+  - type: custom:apexcharts-card
+    header:
+      show: true
+      title: "💰 Ceny elektřiny a nabíjení - 24 hodin"
+    graph_span: 24h
+    span:
+      start: day
+    now:
+      show: true
+      label: Nyní
+    yaxis:
+      - id: price
+        decimals: 2
+        apex_config:
+          title:
+            text: Cena (CZK/kWh)
+          labels:
+            formatter: |
+              EVAL:function(value) {
+                return value ? value.toFixed(2) + ' Kč' : '0 Kč';
+              }
+    apex_config:
+      chart:
+        height: 300px
+      annotations:
+        yaxis:
+          - y: 1.5
+            borderColor: '#00C851'
+            strokeDashArray: 5
+            label:
+              text: 'Always Charge (1.5 CZK)'
+              style:
+                background: '#00C851'
+                color: '#fff'
+          - y: 4.0
+            borderColor: '#ff4444'
+            strokeDashArray: 5
+            label:
+              text: 'Never Charge (4.0 CZK)'
+              style:
+                background: '#ff4444'
+                color: '#fff'
+      tooltip:
+        enabled: true
+        x:
+          format: 'HH:mm'
+    series:
+      - entity: sensor.gw_smart_charging_price
+        name: Cena elektřiny
+        type: line
+        color: '#ffbb33'
+        stroke_width: 3
+        yaxis_id: price
+        data_generator: |
+          return entity.attributes.price_15min?.map((value, index) => {
+            const timestamp = entity.attributes.timestamps?.[index];
+            return timestamp ? [new Date(timestamp).getTime(), value || 0] : null;
+          }).filter(item => item !== null) || [];
+
+  # Predikce a ML konfidence
+  - type: entities
+    title: "🔮 ML Predikce & Konfidence"
+    show_header_toggle: false
+    entities:
+      - entity: sensor.gw_smart_charging_prediction
+        name: Status predikce
+        icon: mdi:crystal-ball
+      - type: attribute
+        entity: sensor.gw_smart_charging_prediction
+        attribute: prediction_quality_score
+        name: Kvalita predikce
+        suffix: " %"
+        icon: mdi:chart-line
+      - type: attribute
+        entity: sensor.gw_smart_charging_prediction
+        attribute: ml_confidence
+        name: ML konfidence
+        icon: mdi:brain
+      - type: attribute
+        entity: sensor.gw_smart_charging_prediction
+        attribute: ml_history_days
+        name: Historických dnů
+        suffix: " dní"
+        icon: mdi:calendar
+      - type: divider
+      - type: attribute
+        entity: sensor.gw_smart_charging_prediction
+        attribute: forecast_confidence_score
+        name: Forecast konfidence
+        icon: mdi:weather-sunny
+      - type: attribute
+        entity: sensor.gw_smart_charging_prediction
+        attribute: forecast_confidence_reason
+        name: Důvod
+        icon: mdi:information
+      - type: attribute
+        entity: sensor.gw_smart_charging_prediction
+        attribute: forecast_data_points
+        name: Datových bodů
+        icon: mdi:dots-hexagon
+      - type: divider
+      - type: attribute
+        entity: sensor.gw_smart_charging_prediction
+        attribute: day_of_week
+        name: Den v týdnu
+        icon: mdi:calendar-today
+      - type: attribute
+        entity: sensor.gw_smart_charging_prediction
+        attribute: is_weekend
+        name: Víkend
+        icon: mdi:calendar-weekend
+
+  # Konfigurace a diagnostika
+  - type: entities
+    title: "⚙️ Konfigurace & Diagnostika"
+    show_header_toggle: false
+    entities:
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: automation_enabled
+        name: Automatizace povolena
+        icon: mdi:robot
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: charging_on_script
+        name: Script ON
+        icon: mdi:script-text
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: charging_off_script
+        name: Script OFF
+        icon: mdi:script-text-outline
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: update_interval_minutes
+        name: Update interval
+        suffix: " min"
+        icon: mdi:update
+      - type: divider
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: battery_power_w
+        name: Aktuální výkon baterie
+        suffix: " W"
+        icon: mdi:flash
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: battery_status
+        name: Status baterie
+        icon: mdi:battery
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: grid_import_w
+        name: Import ze sítě
+        suffix: " W"
+        icon: mdi:transmission-tower
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: pv_power_w
+        name: Výkon FV
+        suffix: " W"
+        icon: mdi:solar-power
+
+  # Activity Log - posledních 10 aktivit
+  - type: entities
+    title: "📝 Activity Log - Poslední aktivity"
+    show_header_toggle: false
+    entities:
+      - entity: sensor.gw_smart_charging_activity_log
+        name: Aktuální aktivita
+        icon: mdi:history
+      - type: attribute
+        entity: sensor.gw_smart_charging_activity_log
+        attribute: total_log_entries
+        name: Celkem záznamů
+        icon: mdi:counter
+      - type: divider
+      - type: attribute
+        entity: sensor.gw_smart_charging_activity_log
+        attribute: recent_activity
+        name: Poslední změny
+        icon: mdi:format-list-bulleted
+
+# KOMPAKTNÍ VARIANTA - pro menší displeje
+# ----------------------------------------
+
+# Mini Status Card
+  - type: entities
+    title: "⚡ Quick Status"
+    show_header_toggle: false
+    entities:
+      - entity: sensor.gw_smart_charging_schedule
+      - entity: sensor.gw_smart_charging_next_grid_charge
+      - entity: sensor.gw_smart_charging_daily_statistics
+      - entity: sensor.gw_smart_charging_prediction
+      - entity: switch.gw_smart_charging_auto_charging
+
+# TIPY PRO POUŽITÍ
+# ----------------
+# 1. Nainstalujte ApexCharts card: https://github.com/RomRider/apexcharts-card
+# 2. Kopírujte sekce kartiček dle potřeby
+# 3. Upravte entity_id pokud se liší od výchozích
+# 4. Pro vlastní prahy upravte y: hodnoty v annotations
+# 5. Dashboard je přístupný na: /lovelace/gw-charging

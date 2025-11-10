@@ -25,11 +25,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         GWSmartPriceSensor(coordinator, entry.entry_id),
         GWSmartScheduleSensor(coordinator, entry.entry_id),
         GWSmartSOCSensor(coordinator, entry.entry_id),
-        GWSmartDiagnosticsSensor(coordinator, entry.entry_id),  # New diagnostics sensor
+        GWSmartDiagnosticsSensor(coordinator, entry.entry_id),  # Diagnostics sensor
         GWSmartBatteryPowerSensor(coordinator, entry.entry_id),  # Real-time battery power
         GWSmartTodayChargeSensor(coordinator, entry.entry_id),  # Today's charge (kWh)
         GWSmartTodayDischargeSensor(coordinator, entry.entry_id),  # Today's discharge (kWh)
-        # New sensors for automation support
+        # Daily statistics and predictions (v1.7.0)
+        GWSmartDailyStatisticsSensor(coordinator, entry.entry_id),  # Daily statistics
+        GWSmartPredictionSensor(coordinator, entry.entry_id),  # ML predictions and forecast
+        # Automation support sensors
         GWSmartNextGridChargeSensor(coordinator, entry.entry_id),  # Next grid charging period
         GWSmartNextBatteryDischargeSensor(coordinator, entry.entry_id),  # Next battery discharge period
         GWSmartActivityLogSensor(coordinator, entry.entry_id),  # Activity log and state changes
@@ -897,3 +900,193 @@ class GWSmartActivityLogSensor(CoordinatorEntity, SensorEntity):
             "automation_active": self.coordinator.config.get("enable_automation", True),
             "last_script_state": self.coordinator._last_script_state,
         }
+
+
+class GWSmartDailyStatisticsSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing daily statistics for charging optimization."""
+
+    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._attr_name = f"{DEFAULT_NAME} Daily Statistics"
+        self._attr_unique_id = f"{entry_id}_daily_statistics"
+        self._attr_icon = "mdi:chart-bar"
+        self._attr_unit_of_measurement = "kWh"
+
+    @property
+    def native_value(self) -> float:
+        """Return total planned energy for today."""
+        data = self.coordinator.data or {}
+        schedule = data.get("schedule", [])
+        
+        if not schedule:
+            return 0.0
+        
+        # Calculate total grid charge planned
+        total_grid_charge = 0.0
+        interval_hours = 0.25  # 15 minutes
+        
+        for slot in schedule:
+            charge_kw = slot.get("planned_charge_kW", 0.0)
+            mode = slot.get("mode", "")
+            if "grid_charge" in mode and charge_kw > 0:
+                total_grid_charge += charge_kw * interval_hours
+        
+        return round(total_grid_charge, 3)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return detailed daily statistics."""
+        data = self.coordinator.data or {}
+        schedule = data.get("schedule", [])
+        battery_metrics = data.get("battery_metrics", {})
+        
+        if not schedule:
+            return {}
+        
+        interval_hours = 0.25  # 15 minutes
+        
+        # Calculate statistics
+        total_grid_charge_kwh = 0.0
+        total_solar_charge_kwh = 0.0
+        total_battery_discharge_kwh = 0.0
+        total_grid_cost_czk = 0.0
+        
+        grid_charge_slots = 0
+        solar_charge_slots = 0
+        discharge_slots = 0
+        
+        for slot in schedule:
+            charge_kw = slot.get("planned_charge_kW", 0.0)
+            price = slot.get("price_czk_kwh", 0.0)
+            mode = slot.get("mode", "")
+            
+            if "grid_charge" in mode and charge_kw > 0:
+                kwh = charge_kw * interval_hours
+                total_grid_charge_kwh += kwh
+                total_grid_cost_czk += kwh * price
+                grid_charge_slots += 1
+            elif mode == "solar_charge" and charge_kw > 0:
+                total_solar_charge_kwh += charge_kw * interval_hours
+                solar_charge_slots += 1
+            elif mode == "battery_discharge" and charge_kw < 0:
+                total_battery_discharge_kwh += abs(charge_kw) * interval_hours
+                discharge_slots += 1
+        
+        # Get actual today's data from sensors
+        today_charge = battery_metrics.get("today_charge_kwh", 0.0)
+        today_discharge = battery_metrics.get("today_discharge_kwh", 0.0)
+        
+        return {
+            "planned_grid_charge_kwh": round(total_grid_charge_kwh, 3),
+            "planned_solar_charge_kwh": round(total_solar_charge_kwh, 3),
+            "planned_battery_discharge_kwh": round(total_battery_discharge_kwh, 3),
+            "estimated_grid_cost_czk": round(total_grid_cost_czk, 2),
+            "grid_charge_slots": grid_charge_slots,
+            "solar_charge_slots": solar_charge_slots,
+            "discharge_slots": discharge_slots,
+            "actual_today_charge_kwh": today_charge,
+            "actual_today_discharge_kwh": today_discharge,
+            "charge_efficiency_pct": round((today_charge / total_grid_charge_kwh * 100) if total_grid_charge_kwh > 0 else 0, 1),
+            "savings_vs_flat_rate": round(self._calculate_savings(schedule, total_grid_cost_czk), 2),
+        }
+    
+    def _calculate_savings(self, schedule: List[dict], optimized_cost: float) -> float:
+        """Calculate savings compared to flat-rate charging."""
+        if not schedule:
+            return 0.0
+        
+        # Calculate what it would cost at average price
+        prices = [s.get("price_czk_kwh", 0.0) for s in schedule if s.get("price_czk_kwh", 0.0) > 0]
+        if not prices:
+            return 0.0
+        
+        avg_price = sum(prices) / len(prices)
+        
+        # Calculate total grid charge
+        interval_hours = 0.25
+        total_kwh = 0.0
+        for slot in schedule:
+            charge_kw = slot.get("planned_charge_kW", 0.0)
+            mode = slot.get("mode", "")
+            if "grid_charge" in mode and charge_kw > 0:
+                total_kwh += charge_kw * interval_hours
+        
+        flat_rate_cost = total_kwh * avg_price
+        return flat_rate_cost - optimized_cost
+
+
+class GWSmartPredictionSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing ML predictions and forecast confidence."""
+
+    def __init__(self, coordinator: GWSmartCoordinator, entry_id: str) -> None:
+        super().__init__(coordinator)
+        self._entry_id = entry_id
+        self._attr_name = f"{DEFAULT_NAME} Prediction"
+        self._attr_unique_id = f"{entry_id}_prediction"
+        self._attr_icon = "mdi:crystal-ball"
+
+    @property
+    def native_value(self) -> str:
+        """Return prediction status."""
+        from .const import CONF_ENABLE_ML_PREDICTION, DEFAULT_ENABLE_ML_PREDICTION
+        
+        ml_enabled = self.coordinator.config.get(CONF_ENABLE_ML_PREDICTION, DEFAULT_ENABLE_ML_PREDICTION)
+        ml_history_days = len(self.coordinator._ml_history)
+        
+        if not ml_enabled:
+            return "disabled"
+        elif ml_history_days == 0:
+            return "learning"
+        elif ml_history_days < 7:
+            return "low_confidence"
+        elif ml_history_days < 14:
+            return "medium_confidence"
+        else:
+            return "high_confidence"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return prediction details."""
+        from .const import CONF_ENABLE_ML_PREDICTION, DEFAULT_ENABLE_ML_PREDICTION
+        from datetime import datetime
+        
+        data = self.coordinator.data or {}
+        
+        ml_enabled = self.coordinator.config.get(CONF_ENABLE_ML_PREDICTION, DEFAULT_ENABLE_ML_PREDICTION)
+        ml_history_days = len(self.coordinator._ml_history)
+        
+        # Get forecast confidence
+        forecast_conf = data.get("forecast_confidence", {})
+        forecast_source = data.get("forecast_source", "unknown")
+        forecast_slots = data.get("forecast_slots_count", 0)
+        
+        # Calculate prediction quality score (0-100)
+        quality_score = 0
+        if ml_enabled and ml_history_days > 0:
+            # ML quality: 0-50 points based on history days
+            ml_quality = min(50, (ml_history_days / 30.0) * 50)
+            quality_score += ml_quality
+        
+        # Forecast quality: 0-50 points
+        forecast_quality = forecast_conf.get("score", 0.0) * 50
+        quality_score += forecast_quality
+        
+        # Get today's date info
+        today = datetime.now()
+        is_weekend = today.weekday() >= 5
+        
+        return {
+            "ml_enabled": ml_enabled,
+            "ml_history_days": ml_history_days,
+            "ml_confidence": "high" if ml_history_days >= 14 else "medium" if ml_history_days >= 7 else "low" if ml_history_days > 0 else "none",
+            "forecast_confidence_score": round(forecast_conf.get("score", 0.0), 3),
+            "forecast_confidence_reason": forecast_conf.get("reason", ""),
+            "forecast_source": forecast_source,
+            "forecast_data_points": forecast_slots,
+            "prediction_quality_score": round(quality_score, 1),
+            "is_weekend": is_weekend,
+            "day_of_week": today.strftime("%A"),
+            "total_confidence": "high" if quality_score >= 70 else "medium" if quality_score >= 40 else "low",
+        }
+

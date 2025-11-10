@@ -110,6 +110,12 @@
       "today_battery_discharge": {
         "name": "Today Battery Discharge"
       },
+      "daily_statistics": {
+        "name": "Daily Statistics"
+      },
+      "prediction": {
+        "name": "Prediction"
+      },
       "next_grid_charge": {
         "name": "Next Grid Charge"
       },
