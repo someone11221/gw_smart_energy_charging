@@ -20,6 +20,9 @@ from .const import (
     CONF_GRID_IMPORT_SENSOR,
     CONF_TODAY_BATTERY_CHARGE_SENSOR,
     CONF_TODAY_BATTERY_DISCHARGE_SENSOR,
+    CONF_NANOGREEN_CHEAPEST_SENSOR,
+    CONF_ADDITIONAL_SWITCHES,
+    CONF_SWITCH_PRICE_THRESHOLD,
     CONF_BATTERY_CAPACITY,
     CONF_MAX_CHARGE_POWER,
     CONF_CHARGE_EFFICIENCY,
@@ -35,6 +38,7 @@ from .const import (
     CONF_ENABLE_ML_PREDICTION,
     CONF_ENABLE_AUTOMATION,
     CONF_SWITCH_ON_MEANS_CHARGE,
+    CONF_TEST_MODE,
     DEFAULT_BATTERY_CAPACITY,
     DEFAULT_MAX_CHARGE_POWER,
     DEFAULT_CHARGE_EFFICIENCY,
@@ -48,6 +52,7 @@ from .const import (
     DEFAULT_CRITICAL_HOURS_END,
     DEFAULT_CRITICAL_HOURS_SOC,
     DEFAULT_ENABLE_ML_PREDICTION,
+    DEFAULT_SWITCH_PRICE_THRESHOLD,
 )
 
 
@@ -76,6 +81,9 @@ class GWSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_GRID_IMPORT_SENSOR, default="sensor.energy_buy"): str,
                 vol.Optional(CONF_TODAY_BATTERY_CHARGE_SENSOR, default="sensor.today_battery_charge"): str,
                 vol.Optional(CONF_TODAY_BATTERY_DISCHARGE_SENSOR, default="sensor.today_battery_discharge"): str,
+                vol.Optional(CONF_NANOGREEN_CHEAPEST_SENSOR, default=""): str,
+                vol.Optional(CONF_ADDITIONAL_SWITCHES, default=""): str,
+                vol.Optional(CONF_SWITCH_PRICE_THRESHOLD, default=DEFAULT_SWITCH_PRICE_THRESHOLD): vol.Coerce(float),
                 vol.Optional(CONF_CHARGING_ON_SCRIPT, default="script.nabijeni_on"): str,
                 vol.Optional(CONF_CHARGING_OFF_SCRIPT, default="script.nabijeni_off"): str,
                 vol.Optional(CONF_SOC_SENSOR, default="sensor.battery_state_of_charge"): str,
@@ -94,6 +102,7 @@ class GWSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_ENABLE_ML_PREDICTION, default=DEFAULT_ENABLE_ML_PREDICTION): bool,
                 vol.Optional(CONF_ENABLE_AUTOMATION, default=True): bool,
                 vol.Optional(CONF_SWITCH_ON_MEANS_CHARGE, default=True): bool,
+                vol.Optional(CONF_TEST_MODE, default=False): bool,
             }
         )
 
@@ -169,6 +178,18 @@ class GWSmartOptionsFlow(config_entries.OptionsFlow):
                     default=current_config.get(CONF_TODAY_BATTERY_DISCHARGE_SENSOR, "sensor.today_battery_discharge")
                 ): str,
                 vol.Optional(
+                    CONF_NANOGREEN_CHEAPEST_SENSOR,
+                    default=current_config.get(CONF_NANOGREEN_CHEAPEST_SENSOR, "")
+                ): str,
+                vol.Optional(
+                    CONF_ADDITIONAL_SWITCHES,
+                    default=current_config.get(CONF_ADDITIONAL_SWITCHES, "")
+                ): str,
+                vol.Optional(
+                    CONF_SWITCH_PRICE_THRESHOLD,
+                    default=current_config.get(CONF_SWITCH_PRICE_THRESHOLD, DEFAULT_SWITCH_PRICE_THRESHOLD)
+                ): vol.Coerce(float),
+                vol.Optional(
                     CONF_CHARGING_ON_SCRIPT, 
                     default=current_config.get(CONF_CHARGING_ON_SCRIPT, "script.nabijeni_on")
                 ): str,
@@ -239,6 +260,10 @@ class GWSmartOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_SWITCH_ON_MEANS_CHARGE, 
                     default=current_config.get(CONF_SWITCH_ON_MEANS_CHARGE, True)
+                ): bool,
+                vol.Optional(
+                    CONF_TEST_MODE,
+                    default=current_config.get(CONF_TEST_MODE, False)
                 ): bool,
             }
         )

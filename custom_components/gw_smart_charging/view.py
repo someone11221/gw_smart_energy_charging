@@ -5,6 +5,7 @@ import logging
 from typing import Any
 from datetime import datetime
 
+from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
@@ -33,7 +34,7 @@ class GWSmartChargingDashboardView(HomeAssistantView):
         # Build HTML dashboard
         html = self._build_dashboard_html(integration_data)
         
-        return self.Response(
+        return web.Response(
             text=html,
             content_type="text/html",
             charset="utf-8",
@@ -371,7 +372,7 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                     <h1>
                         <span class="icon">🔋</span>
                         GW Smart Charging
-                        <span class="version">v1.9.5</span>
+                        <span class="version">v2.0.0</span>
                     </h1>
                     <p>Advanced battery charging optimization for Home Assistant</p>
                 </div>
@@ -432,7 +433,7 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                         </div>
                         <div class="feature-item">
                             <span class="icon">📊</span>
-                            <span class="text">Machine learning consumption prediction</span>
+                            <span class="text">Advanced ML: weekday/weekend/holiday patterns</span>
                         </div>
                         <div class="feature-item">
                             <span class="icon">⚡</span>
@@ -449,6 +450,22 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                         <div class="feature-item">
                             <span class="icon">📉</span>
                             <span class="text">Battery charge/discharge tracking</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="icon">🎛️</span>
+                            <span class="text">Nanogreen cheapest hours integration</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="icon">🔌</span>
+                            <span class="text">Additional switches with price control</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="icon">🧪</span>
+                            <span class="text">Advanced testing and debugging mode</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="icon">🌍</span>
+                            <span class="text">Czech holiday detection</span>
                         </div>
                     </div>
                 </div>
@@ -537,7 +554,7 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                 </div>
                 
                 <div class="footer">
-                    <p>GW Smart Charging v1.9.5 | © 2024 | Created for Home Assistant</p>
+                    <p>GW Smart Charging v2.0.0 | © 2024 | Created for Home Assistant</p>
                     <p style="margin-top: 10px;">For documentation and support, visit <a href="https://github.com/someone11221/gw_smart_energy_charging" style="color: white; text-decoration: underline;">GitHub Repository</a></p>
                 </div>
             </div>

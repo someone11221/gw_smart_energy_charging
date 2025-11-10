@@ -18,6 +18,9 @@ CONF_BATTERY_POWER_SENSOR = "battery_power_sensor"
 CONF_GRID_IMPORT_SENSOR = "grid_import_sensor"
 CONF_TODAY_BATTERY_CHARGE_SENSOR = "today_battery_charge_sensor"
 CONF_TODAY_BATTERY_DISCHARGE_SENSOR = "today_battery_discharge_sensor"
+CONF_NANOGREEN_CHEAPEST_SENSOR = "nanogreen_cheapest_sensor"
+CONF_ADDITIONAL_SWITCHES = "additional_switches"
+CONF_SWITCH_PRICE_THRESHOLD = "switch_price_threshold"
 
 # Battery configuration
 CONF_BATTERY_CAPACITY = "battery_capacity_kwh"
@@ -59,3 +62,4 @@ DEFAULT_CRITICAL_HOURS_START = 17  # 17:00
 DEFAULT_CRITICAL_HOURS_END = 21  # 21:00
 DEFAULT_CRITICAL_HOURS_SOC = 80.0  # 80%
 DEFAULT_ENABLE_ML_PREDICTION = False
+DEFAULT_SWITCH_PRICE_THRESHOLD = 2.0  # CZK/kWh - threshold for turning on additional switches

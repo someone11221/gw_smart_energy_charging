@@ -22,6 +22,10 @@ from .const import (
     CONF_CHARGING_ON_SCRIPT,
     CONF_CHARGING_OFF_SCRIPT,
     CONF_ENABLE_AUTOMATION,
+    CONF_NANOGREEN_CHEAPEST_SENSOR,
+    CONF_ADDITIONAL_SWITCHES,
+    CONF_SWITCH_PRICE_THRESHOLD,
+    CONF_TEST_MODE,
     CONF_BATTERY_CAPACITY,
     CONF_MAX_CHARGE_POWER,
     CONF_CHARGE_EFFICIENCY,
@@ -48,6 +52,7 @@ from .const import (
     DEFAULT_CRITICAL_HOURS_END,
     DEFAULT_CRITICAL_HOURS_SOC,
     DEFAULT_ENABLE_ML_PREDICTION,
+    DEFAULT_SWITCH_PRICE_THRESHOLD,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -70,8 +75,12 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         self._last_daily_date: Optional[date] = None
         # Machine learning data - store last 30 days of hourly consumption patterns
         self._ml_history: List[List[float]] = []  # List of 24-hour patterns
+        self._ml_weekday_history: List[List[float]] = []  # Weekday patterns
+        self._ml_weekend_history: List[List[float]] = []  # Weekend patterns
+        self._ml_holiday_history: List[List[float]] = []  # Holiday patterns
         self._last_charging_state: bool = False  # For hysteresis tracking
         self._last_script_state: Optional[bool] = None  # Track last script execution state
+        self._additional_switches_state: Dict[str, bool] = {}  # Track additional switches state
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch and normalize forecast, price and load data and compute 15-min schedule."""
@@ -165,8 +174,19 @@ class GWSmartCoordinator(DataUpdateCoordinator):
     async def _execute_charging_automation(self, schedule: List[Dict[str, Any]]) -> None:
         """Execute charging scripts based on current schedule slot.
         
+        Enhanced in v2.0 to support:
+        - Nanogreen cheapest hours sensor
+        - Additional switches based on price thresholds
+        - Test mode for debugging
+        
         Only calls scripts when state changes to avoid unnecessary calls.
         """
+        # Check if test mode is enabled
+        test_mode = self.config.get(CONF_TEST_MODE, False)
+        if test_mode:
+            _LOGGER.info("TEST MODE: Would execute charging automation but test mode is active")
+            return
+        
         # Check if automation is enabled
         automation_enabled = self.config.get(CONF_ENABLE_AUTOMATION, True)
         if not automation_enabled:
@@ -191,6 +211,16 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         
         current_slot = schedule[slot]
         should_charge = current_slot.get("should_charge", False)
+        
+        # NEW v2.0: Check Nanogreen sensor for cheapest hours override
+        nanogreen_sensor = self.config.get(CONF_NANOGREEN_CHEAPEST_SENSOR)
+        if nanogreen_sensor:
+            nanogreen_state = self.hass.states.get(nanogreen_sensor)
+            if nanogreen_state and nanogreen_state.state in ["on", "true", "True"]:
+                _LOGGER.info("Nanogreen sensor indicates cheapest hours - enabling charging")
+                should_charge = True
+            elif nanogreen_state:
+                _LOGGER.debug("Nanogreen sensor state: %s - using standard logic", nanogreen_state.state)
         
         # Only call script if state changed
         if self._last_script_state is None or self._last_script_state != should_charge:
@@ -220,6 +250,71 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                 _LOGGER.error("Failed to execute charging script: %s", e, exc_info=True)
         else:
             _LOGGER.debug("Charging state unchanged (%s), skipping script call", should_charge)
+        
+        # NEW v2.0: Manage additional switches based on price threshold
+        await self._manage_additional_switches(current_slot)
+
+    async def _manage_additional_switches(self, current_slot: Dict[str, Any]) -> None:
+        """Manage additional switches based on electricity price.
+        
+        Turn on configured switches when price is below threshold.
+        Turn off switches when price goes above threshold.
+        """
+        # Get additional switches configuration (comma-separated entity_ids)
+        switches_config = self.config.get(CONF_ADDITIONAL_SWITCHES, "")
+        if not switches_config or not switches_config.strip():
+            return
+        
+        # Parse switch entity IDs
+        switch_entities = [s.strip() for s in switches_config.split(",") if s.strip()]
+        if not switch_entities:
+            return
+        
+        # Get price threshold
+        price_threshold = float(self.config.get(CONF_SWITCH_PRICE_THRESHOLD, DEFAULT_SWITCH_PRICE_THRESHOLD))
+        current_price = current_slot.get("price_czk_kwh", 999.0)
+        
+        _LOGGER.debug(f"Managing {len(switch_entities)} additional switches, current price: {current_price:.2f}, threshold: {price_threshold:.2f}")
+        
+        # Check if test mode is enabled
+        test_mode = self.config.get(CONF_TEST_MODE, False)
+        
+        for switch_entity in switch_entities:
+            # Validate entity_id format
+            if not switch_entity.startswith("switch."):
+                _LOGGER.warning(f"Invalid switch entity_id: {switch_entity}, must start with 'switch.'")
+                continue
+            
+            # Determine desired state
+            should_be_on = current_price <= price_threshold
+            
+            # Get current state
+            current_state = self.hass.states.get(switch_entity)
+            if not current_state:
+                _LOGGER.warning(f"Switch {switch_entity} not found in Home Assistant")
+                continue
+            
+            is_currently_on = current_state.state == "on"
+            
+            # Only change state if needed
+            last_state = self._additional_switches_state.get(switch_entity)
+            if last_state is None or last_state != should_be_on:
+                try:
+                    if test_mode:
+                        _LOGGER.info(f"TEST MODE: Would turn {'ON' if should_be_on else 'OFF'} switch {switch_entity} (price: {current_price:.2f} CZK/kWh)")
+                    else:
+                        service = "turn_on" if should_be_on else "turn_off"
+                        await self.hass.services.async_call(
+                            "switch", service,
+                            {"entity_id": switch_entity},
+                            blocking=False
+                        )
+                        _LOGGER.info(f"Turned {'ON' if should_be_on else 'OFF'} switch {switch_entity} (price: {current_price:.2f} CZK/kWh, threshold: {price_threshold:.2f})")
+                    
+                    self._additional_switches_state[switch_entity] = should_be_on
+                    
+                except Exception as e:
+                    _LOGGER.error(f"Failed to control switch {switch_entity}: {e}", exc_info=True)
 
     # ---------- NEW: 15-minute interval parsing methods ----------
     
@@ -323,33 +418,54 @@ class GWSmartCoordinator(DataUpdateCoordinator):
     def _ml_predict_load_pattern(self, daily_load_sensor_state) -> List[float]:
         """Use machine learning (weighted averaging) to predict consumption pattern from history.
         
-        Enhanced logic:
-        - Separate weekday vs weekend patterns
+        Enhanced in v2.0:
+        - Separate weekday vs weekend vs holiday patterns
         - Weight recent days more heavily
         - Consider similar days (same day of week)
+        - Holiday detection
         """
         from datetime import datetime
+        import calendar
         
-        if not self._ml_history:
+        if not self._ml_history and not self._ml_weekday_history and not self._ml_weekend_history:
             # No history yet, fall back to current day pattern
             return self._parse_daily_load_pattern_15min(daily_load_sensor_state)
         
-        # Get current day of week (0=Monday, 6=Sunday)
+        # Get current day information
         today = datetime.now()
         is_weekend = today.weekday() >= 5  # Saturday or Sunday
+        is_holiday = self._is_holiday(today)
+        
+        # Select appropriate history based on day type
+        if is_holiday and self._ml_holiday_history:
+            history_to_use = self._ml_holiday_history
+            _LOGGER.debug("Using holiday patterns for ML prediction")
+        elif is_weekend and self._ml_weekend_history:
+            history_to_use = self._ml_weekend_history
+            _LOGGER.debug("Using weekend patterns for ML prediction")
+        elif not is_weekend and self._ml_weekday_history:
+            history_to_use = self._ml_weekday_history
+            _LOGGER.debug("Using weekday patterns for ML prediction")
+        else:
+            # Fallback to general history
+            history_to_use = self._ml_history
+            _LOGGER.debug("Using general patterns for ML prediction")
+        
+        if not history_to_use:
+            return self._parse_daily_load_pattern_15min(daily_load_sensor_state)
         
         # Enhanced prediction with weighted average
         prediction = [0.0] * 96
         total_weight = 0.0
         
         # Process historical patterns with exponential decay weighting
-        for idx, hist_pattern in enumerate(self._ml_history):
+        for idx, hist_pattern in enumerate(history_to_use):
             if len(hist_pattern) != 96:
                 continue
             
             # Calculate weight: more recent = higher weight
             # Most recent day gets weight 1.0, oldest gets ~0.33
-            days_ago = len(self._ml_history) - idx - 1
+            days_ago = len(history_to_use) - idx - 1
             recency_weight = 1.0 / (1.0 + days_ago * 0.1)
             
             # Apply pattern to prediction
@@ -364,18 +480,79 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         # Add safety margin (10% increase) to avoid underestimating consumption
         prediction = [p * 1.1 for p in prediction]
         
-        _LOGGER.debug(f"ML prediction based on {len(self._ml_history)} historical patterns "
-                     f"(weekend: {is_weekend}, total_weight: {total_weight:.2f})")
+        _LOGGER.debug(f"ML prediction based on {len(history_to_use)} historical patterns "
+                     f"(weekend: {is_weekend}, holiday: {is_holiday}, total_weight: {total_weight:.2f})")
         return prediction
     
+    def _is_holiday(self, check_date: datetime) -> bool:
+        """Check if a date is a holiday (Czech holidays).
+        
+        This is a simple implementation for major holidays.
+        Could be enhanced to use external holiday API or calendar integration.
+        """
+        # Czech public holidays (simplified - add more as needed)
+        czech_holidays = [
+            (1, 1),   # New Year's Day
+            (5, 1),   # Labour Day
+            (5, 8),   # Victory Day
+            (7, 5),   # Saints Cyril and Methodius
+            (7, 6),   # Jan Hus Day
+            (9, 28),  # Czech Statehood Day
+            (10, 28), # Independent Czechoslovak State Day
+            (11, 17), # Struggle for Freedom and Democracy Day
+            (12, 24), # Christmas Eve
+            (12, 25), # Christmas Day
+            (12, 26), # St. Stephen's Day
+        ]
+        
+        # Check if current date matches any holiday
+        current_month_day = (check_date.month, check_date.day)
+        
+        # Also check for Good Friday and Easter Monday (variable dates)
+        # For simplicity, we're not calculating Easter dates here
+        # In production, you'd want to use a proper holiday library
+        
+        return current_month_day in czech_holidays
+    
     def _update_ml_history(self, current_pattern: List[float]) -> None:
-        """Update ML history with current day's pattern (keep last 30 days)."""
-        if len(current_pattern) == 96:
-            self._ml_history.append(current_pattern)
-            # Keep only last 30 days
-            if len(self._ml_history) > 30:
-                self._ml_history = self._ml_history[-30:]
-            _LOGGER.debug(f"ML history updated: {len(self._ml_history)} patterns stored")
+        """Update ML history with current day's pattern (keep last 30 days).
+        
+        Enhanced in v2.0 to maintain separate histories for:
+        - Weekdays
+        - Weekends  
+        - Holidays
+        - General (all days)
+        """
+        if len(current_pattern) != 96:
+            return
+        
+        today = datetime.now()
+        is_weekend = today.weekday() >= 5
+        is_holiday = self._is_holiday(today)
+        
+        # Update general history
+        self._ml_history.append(current_pattern)
+        if len(self._ml_history) > 30:
+            self._ml_history = self._ml_history[-30:]
+        
+        # Update specific history based on day type
+        if is_holiday:
+            self._ml_holiday_history.append(current_pattern)
+            if len(self._ml_holiday_history) > 30:
+                self._ml_holiday_history = self._ml_holiday_history[-30:]
+            _LOGGER.debug(f"ML history updated: {len(self._ml_holiday_history)} holiday patterns stored")
+        elif is_weekend:
+            self._ml_weekend_history.append(current_pattern)
+            if len(self._ml_weekend_history) > 30:
+                self._ml_weekend_history = self._ml_weekend_history[-30:]
+            _LOGGER.debug(f"ML history updated: {len(self._ml_weekend_history)} weekend patterns stored")
+        else:
+            self._ml_weekday_history.append(current_pattern)
+            if len(self._ml_weekday_history) > 30:
+                self._ml_weekday_history = self._ml_weekday_history[-30:]
+            _LOGGER.debug(f"ML history updated: {len(self._ml_weekday_history)} weekday patterns stored")
+        
+        _LOGGER.debug(f"ML history updated: {len(self._ml_history)} total patterns stored")
     
     def _build_forecast_timestamps_15min(self, state) -> List[str]:
         """Build list of 96 ISO timestamps for 15-min intervals (for day after tomorrow if _d2 sensor)."""
