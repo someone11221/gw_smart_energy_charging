@@ -5,6 +5,7 @@ import logging
 from typing import Any
 from datetime import datetime
 
+from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
@@ -33,7 +34,7 @@ class GWSmartChargingDashboardView(HomeAssistantView):
         # Build HTML dashboard
         html = self._build_dashboard_html(integration_data)
         
-        return self.Response(
+        return web.Response(
             text=html,
             content_type="text/html",
             charset="utf-8",
