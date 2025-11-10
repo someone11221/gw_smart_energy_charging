@@ -112,6 +112,25 @@ class GWSmartChargingDashboardView(HomeAssistantView):
         if switch_entity:
             switch_state = switch_entity.state
         
+        # Get diagnostics data for detailed display
+        diagnostics_data = {}
+        current_strategy = "Unknown"
+        current_soc = "N/A"
+        test_mode = "N/A"
+        next_charge_time = "N/A"
+        
+        diagnostics_entity = self.hass.states.get('sensor.gw_smart_charging_diagnostics')
+        if diagnostics_entity and diagnostics_entity.attributes:
+            diagnostics_data = diagnostics_entity.attributes
+            current_strategy = diagnostics_data.get('charging_strategy', 'Unknown')
+            current_soc = diagnostics_data.get('current_soc_pct', 'N/A')
+            test_mode = diagnostics_data.get('test_mode', False)
+            
+        # Get next charge information
+        next_charge_entity = self.hass.states.get('sensor.gw_smart_charging_next_charge')
+        if next_charge_entity:
+            next_charge_time = next_charge_entity.state
+        
         # Convert data to JSON for embedding
         schedule_json = json.dumps(schedule_data)
         soc_forecast_json = json.dumps(soc_forecast_data[:96] if len(soc_forecast_data) > 0 else [])
@@ -419,7 +438,7 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                     <h1>
                         <span class="icon">🔋</span>
                         {t['dashboard_title']}
-                        <span class="version">v2.2.0</span>
+                        <span class="version">v2.3.0</span>
                     </h1>
                     <p>{t['integration_status']}: <strong style="color: #4CAF50;">{'Active' if switch_state == 'on' else 'Inactive'}</strong></p>
                 </div>
@@ -517,6 +536,39 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                     </div>
                 </div>
                 
+                <!-- NEW v2.3.0: Current Configuration Status -->
+                <div class="section">
+                    <h2>⚙️ Current Configuration</h2>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <h3>Charging Strategy</h3>
+                            <div class="value" style="font-size: 18px;">{current_strategy}</div>
+                            <div class="label">Active Strategy</div>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Current SOC</h3>
+                            <div class="value">{current_soc}</div>
+                            <div class="label">Battery State (%)</div>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Test Mode</h3>
+                            <div class="value" style="font-size: 18px;">{'ON' if test_mode else 'OFF'}</div>
+                            <div class="label">Debug Status</div>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Next Charge</h3>
+                            <div class="value" style="font-size: 18px;">{next_charge_time}</div>
+                            <div class="label">Scheduled</div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 20px; padding: 15px; background: #f0f7ff; border-left: 4px solid #2196F3; border-radius: 4px;">
+                        <p style="margin: 0; color: #1976D2;">
+                            <strong>💡 Hint:</strong> The charging strategy determines how the integration decides when to charge the battery. 
+                            You can change it in Settings → Devices & Services → GW Smart Charging → Configure.
+                        </p>
+                    </div>
+                </div>
+                
                 <!-- NEW v1.9.5: Control Panel -->
                 <div class="controls-section">
                     <h2>🎛️ Control Panel</h2>
@@ -536,6 +588,24 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                         </button>
                     </div>
                     <div id="control-status" style="margin-top: 15px; padding: 10px; border-radius: 5px; display: none;"></div>
+                    
+                    <!-- Test Mode Explanation -->
+                    <div style="margin-top: 20px; padding: 15px; background: #fff3e0; border-left: 4px solid #ff9800; border-radius: 4px;">
+                        <h3 style="margin: 0 0 10px 0; color: #f57c00;">🧪 Test Mode Information</h3>
+                        <p style="margin: 5px 0; color: #555;">
+                            <strong>What is Test Mode?</strong> When enabled, the integration calculates charging schedules but does NOT execute them. 
+                            Scripts are not called, and the battery is not charged. This is useful for:
+                        </p>
+                        <ul style="margin: 10px 0; padding-left: 25px; color: #555;">
+                            <li>Testing different configuration parameters without affecting the battery</li>
+                            <li>Verifying charging logic before going live</li>
+                            <li>Debugging issues with sensor data or schedules</li>
+                            <li>Previewing how different strategies would behave</li>
+                        </ul>
+                        <p style="margin: 5px 0; color: #555;">
+                            <strong>Current Status:</strong> Test mode is <strong style="color: {'#f57c00' if test_mode else '#4CAF50'};">{'ENABLED - Integration is in simulation mode' if test_mode else 'DISABLED - Integration is controlling the battery'}</strong>
+                        </p>
+                    </div>
                 </div>
                 
                 <!-- NEW v2.2.0: Charts Section -->
@@ -549,6 +619,25 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                     </div>
                     <div style="margin-bottom: 30px;">
                         <canvas id="energyFlowChart" style="max-height: 300px;"></canvas>
+                    </div>
+                    
+                    <!-- Debug info for data availability -->
+                    <div style="margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 8px;">
+                        <h3 style="margin: 0 0 10px 0; color: #666;">📊 Data Status</h3>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                            <div>
+                                <strong>Schedule Data:</strong> {len(schedule_data)} slots
+                            </div>
+                            <div>
+                                <strong>SOC Forecast:</strong> {len(soc_forecast_data)} values
+                            </div>
+                            <div>
+                                <strong>Price Data:</strong> {len(price_data)} values
+                            </div>
+                            <div>
+                                <strong>Solar Forecast:</strong> {len(forecast_data)} values
+                            </div>
+                        </div>
                     </div>
                 </div>
                 
@@ -615,7 +704,7 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                 </div>
                 
                 <div class="footer">
-                    <p>GW Smart Charging v2.2.0 | © 2024 | Created for Home Assistant</p>
+                    <p>Smart Battery Charging Controller v2.3.0 | © 2024 Martin Rak | Created for Home Assistant</p>
                     <p style="margin-top: 10px;">For documentation and support, visit <a href="https://github.com/someone11221/gw_smart_energy_charging" style="color: white; text-decoration: underline;">GitHub Repository</a></p>
                 </div>
             </div>
@@ -630,8 +719,19 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                 const SWITCH_STATE = '{switch_state}';
                 const CURRENT_LANGUAGE = "{language}";
                 
+                // Debug logging
+                console.log('Dashboard Data Loaded:', {{
+                    scheduleSlots: SCHEDULE_DATA.length,
+                    socForecastValues: SOC_FORECAST_DATA.length,
+                    priceValues: PRICE_DATA.length,
+                    forecastValues: FORECAST_DATA.length,
+                    switchState: SWITCH_STATE,
+                    language: CURRENT_LANGUAGE
+                }});
+                
                 // Initialize charts on page load
                 window.addEventListener('DOMContentLoaded', function() {{
+                    console.log('Initializing charts...');
                     initializeCharts();
                     loadPredictionTimeline();
                 }});
@@ -722,7 +822,12 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                 // SOC forecast chart
                 function initSocChart() {{
                     const ctx = document.getElementById('socChart');
-                    if (!ctx) return;
+                    if (!ctx) {{
+                        console.error('SOC chart canvas not found');
+                        return;
+                    }}
+                    
+                    console.log('Initializing SOC chart with data:', SOC_FORECAST_DATA);
                     
                     const labels = [];
                     for (let h = 0; h < 24; h++) {{
@@ -731,17 +836,25 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                         }}
                     }}
                     
+                    // Ensure we have valid data or use placeholder
+                    const socData = SOC_FORECAST_DATA && SOC_FORECAST_DATA.length > 0 
+                        ? SOC_FORECAST_DATA.slice(0, 96) 
+                        : new Array(96).fill(null);
+                    
+                    console.log('SOC chart data points:', socData.length, 'First few values:', socData.slice(0, 5));
+                    
                     new Chart(ctx, {{
                         type: 'line',
                         data: {{
                             labels: labels,
                             datasets: [{{
                                 label: CURRENT_LANGUAGE === 'cs' ? 'Předpověď stavu baterie (%)' : 'Battery SOC Forecast (%)',
-                                data: SOC_FORECAST_DATA.length > 0 ? SOC_FORECAST_DATA.slice(0, 96) : [],
+                                data: socData,
                                 borderColor: 'rgb(255, 159, 64)',
                                 backgroundColor: 'rgba(255, 159, 64, 0.1)',
                                 tension: 0.3,
-                                fill: true
+                                fill: true,
+                                spanGaps: true  // Draw line even if there are null values
                             }}]
                         }},
                         options: {{
