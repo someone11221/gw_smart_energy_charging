@@ -1,22 +1,27 @@
 # GW Smart Charging
 
-Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 1.5.0** - automatické řízení nabíjení každé 2 minuty s real-time reakcí na změny, W→kWh konverze a dashboard.
+Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 1.7.0** - autonomní služba s denními statistikami, predikcemi a funkčním ApexCharts dashboardem.
 
 ## Funkce
 
-✨ **Automatické řízení** - Aktivní ovládání nabíjení každé 2 minuty  
+✨ **Automatické autonomní řízení** - Aktivní ovládání nabíjení každé 2 minuty bez zásahu uživatele  
 🎯 **15minutová optimalizace** - Přesné řízení v 96 intervalech/den  
 🌞 **Inteligentní self-consumption** - Priorita využití solárního přebytku  
 💰 **Cenové prahové hodnoty** - Always/Never charge prahy s hysterezí  
 🔋 **SOC limity** - Min/Max/Target pro ochranu baterie  
-📊 **ML Predikce spotřeby** - Učení z historických dat (30 dní)  
+📊 **Denní statistiky** - Plánované vs skutečné nabíjení, úspory, efektivita  
+🔮 **Vylepšená ML Predikce** - Vážené průměrování z 30 dní historických dat s quality score  
 ⚡ **Critical Hours** - Vyšší SOC během peak hours  
 🤖 **Script automation** - Automatické volání script.nabijeni_on/off  
 📈 **Real-time monitoring** - Battery power & grid import  
 🔍 **Diagnostika** - Kompletní přehled stavu a logiky integrace  
 🔄 **W→kWh konverze** - Automatický převod jednotek pro správnou logiku  
 📉 **Sledování nabíjení/vybíjení** - Today's charge/discharge tracking  
-🎨 **Dashboard** - Přehledný dashboard podobný open-meteo integraci  
+🎨 **Funkční ApexCharts Dashboard** - Grafy optimalizace s data_generator pro v1.7.0  
+🛠️ **Služba pro automatizace** - `get_charging_schedule` s detailními údaji  
+📝 **Activity log** - Sledování změn režimů a stavu systému  
+💡 **Prediction sensor** - Konfidence ML a forecastu, kvalita predikce  
+💸 **Savings tracking** - Úspory oproti pausálnímu tarifu  
 
 ## Instalace
 
@@ -57,11 +62,57 @@ Integrace poskytuje přehledný dashboard podobný open-meteo integraci:
 
 Dashboard je dostupný na: `/api/gw_smart_charging/dashboard`
 
+## Nové v1.6.0
+
+### Služba pro automatizace
+Nová služba `gw_smart_charging.get_charging_schedule` poskytuje detailní informace o plánu nabíjení:
+- Plánované periody nabíjení ze sítě
+- Plánované periody vybíjení baterie
+- Plánované periody nabíjení ze solárů
+- Sloty s očekávaným importem ze sítě
+- Denní statistiky (kWh, náklady)
+- Real-time metriky baterie a sítě
+- Informace o optimalizaci
+
+### Nové senzory
+- `sensor.gw_smart_charging_next_grid_charge` - Čas příštího nabíjení ze sítě
+- `sensor.gw_smart_charging_next_battery_discharge` - Čas příštího vybíjení baterie
+- `sensor.gw_smart_charging_activity_log` - Log změn režimů a aktivit
+
+### Vylepšená optimalizace
+- **Vážená ML predikce**: Novější dny mají větší vliv na predikci spotřeby
+- **Chytřejší grid charging**: Rozhodování založené na budoucím deficitu energie
+- **Respektování kapacity baterie**: Prevence přebíjení a zbytečných cyklů
+- **Minimální prah nabíjení**: Nabíjí pouze pokud je potřeba > 0.5 kWh
+
+Více informací v `FEATURE_SERVICE_v1.6.0.md`.
+
 ## Dokumentace
 
 Detailní dokumentace je v `/custom_components/gw_smart_charging/README.md`
 
 ## Release Notes
+
+### v1.7.0 (Autonomous Service & Statistics Release)
+- 🤖 **Autonomní služba** - Integrace funguje plně autonomně bez zásahu uživatele
+- 📊 **Nový sensor: Daily Statistics** - Denní statistiky nabíjení, úspory, efektivita
+- 🔮 **Nový sensor: Prediction** - ML konfidence, kvalita predikce, forecast confidence
+- 💸 **Savings tracking** - Výpočet úspor oproti pausálnímu tarifu
+- 📈 **Funkční ApexCharts** - Opraven data_generator pro správné zobrazení grafů
+- 🎨 **Nový Lovelace dashboard** - Kompletní dashboard s všemi novými senzory (lovelace_v1.7.0.yaml)
+- 📋 **Efektivita nabíjení** - Porovnání plánovaného vs skutečného nabíjení
+- 🔍 **Prediction quality score** - Celkový score kvality predikce (0-100)
+- 📝 **Rozšířené senzory** - Všechny senzory zobrazují podrobné stavy a atributy
+- ✨ **Ready for release** - Připraveno pro produkční nasazení
+
+### v1.6.0 (Service & Enhanced Optimization Release)
+- 🛠️ **Nová služba** - `get_charging_schedule` pro automatizace, skripty a scény
+- 📝 **3 nové senzory** - next_grid_charge, next_battery_discharge, activity_log
+- 🧠 **Vylepšená ML predikce** - Vážené průměrování s exponenciálním rozpadem
+- 🔮 **Chytrá optimalizace** - Rozhodování založené na budoucí spotřebě a kapacitě baterie
+- 📊 **Activity tracking** - Sledování změn režimů a stavu systému
+- 📋 **Rozšířené příklady** - Nové automatizace využívající službu
+- 🔧 **Lepší grid charging** - Výpočet energy deficitu pro optimální nabíjení
 
 ### v1.5.0 (Unit Conversion & Dashboard Release)
 - 🔄 **W→kWh konverze** - Automatický převod výkonových senzorů (W) na energii (kWh) pro správnou logiku

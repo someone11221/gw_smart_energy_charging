@@ -110,6 +110,21 @@
       "today_battery_discharge": {
         "name": "Today Battery Discharge"
       },
+      "daily_statistics": {
+        "name": "Daily Statistics"
+      },
+      "prediction": {
+        "name": "Prediction"
+      },
+      "next_grid_charge": {
+        "name": "Next Grid Charge"
+      },
+      "next_battery_discharge": {
+        "name": "Next Battery Discharge"
+      },
+      "activity_log": {
+        "name": "Activity Log"
+      },
       "series_pv": {
         "name": "PV Series"
       },
@@ -133,6 +148,20 @@
       "charging_control": {
         "name": "Charging Control"
       }
+    }
+  },
+  "services": {
+    "optimize_now": {
+      "name": "Optimize Now",
+      "description": "Trigger immediate recalculation of charging schedule"
+    },
+    "apply_schedule_now": {
+      "name": "Apply Schedule Now",
+      "description": "Apply the current charging schedule immediately"
+    },
+    "get_charging_schedule": {
+      "name": "Get Charging Schedule",
+      "description": "Get detailed battery charging schedule with information about planned grid charging, battery discharge, solar charging, and grid import periods for use in automations"
     }
   }
 }
