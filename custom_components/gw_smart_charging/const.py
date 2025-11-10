@@ -51,6 +51,10 @@ CONF_CHARGING_STRATEGY = "charging_strategy"
 CONF_LANGUAGE = "language"
 CONF_FULL_HOUR_CHARGING = "full_hour_charging"
 
+# Time interval constants
+HOURS_PER_DAY = 24  # Using hourly intervals (changed from 96 15-minute intervals in v2.3.0)
+MINUTES_PER_INTERVAL = 60  # Each interval is 1 hour
+
 # Charging strategies
 STRATEGY_DYNAMIC = "dynamic"  # Smart optimization based on prices and forecasts (default)
 STRATEGY_4_LOWEST = "4_lowest_hours"  # Always charge in 4 lowest priced hours

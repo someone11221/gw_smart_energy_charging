@@ -1,4 +1,19 @@
-# GW Smart Charging Coordinator - 15-minute interval optimization logic
+# GW Smart Charging Coordinator - Hourly interval optimization logic
+#
+# This coordinator is the heart of the Smart Battery Charging Controller.
+# It reads data from various sensors (solar forecast, electricity prices, consumption)
+# and calculates an optimal charging schedule for the battery.
+#
+# Key Features:
+# - Hourly charging schedule optimization (24 hourly slots per day)
+# - Multiple charging strategies (dynamic, fixed hours, solar priority, etc.)
+# - Machine learning from historical consumption patterns
+# - Support for critical hours (peak demand periods)
+# - Test mode for safe configuration testing
+# - Integration with Nanogreen pricing service
+#
+# Author: Martin Rak
+# Version: 2.3.0
 
 from __future__ import annotations
 

@@ -1,8 +1,21 @@
-# GW Smart Charging
+# Smart Battery Charging Controller
 
-Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 2.2.0** - Nové strategie nabíjení, vícejazyčná podpora, interaktivní grafy, celohodinové nabíjecí cykly.
+Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie pomocí solárního forecastu a cen elektřiny. **Verze 2.3.0** - Vylepšený dashboard, lepší konfigurace s hinty, debugging tools.
+
+**Autor:** Martin Rak | **Firmware verze:** 2.3.0
 
 ## Funkce
+
+### 🆕 Nové ve v2.3.0
+
+📊 **Vylepšený dashboard** - Zobrazení aktuální strategie nabíjení, SOC, test mode status, příští nabíjení  
+🎨 **Lepší konfigurace UI** - Emoji ikony, detailní popisky a hinty ke každému parametru  
+🧪 **Rozšířený test mode** - Podrobné vysvětlení co testovat a jak používat simulační režim  
+📈 **Data debugging** - Přidána sekce s informacemi o dostupnosti dat pro grafy  
+🔍 **Console logging** - Vylepšené logování pro diagnostiku problémů s grafy  
+📝 **CHANGELOG.md** - Nový soubor pro HACS zobrazení změn při aktualizaci  
+👤 **Branding update** - Změna výrobce na Martin Rak, verze shodná s tagem  
+💡 **Hints všude** - Vysvětlivky a rady v dashboardu i konfiguraci  
 
 ### 🆕 Nové ve v2.2.0
 
@@ -273,6 +286,111 @@ Integrace se nyní zobrazuje v panelu Zařízení a Služby:
 - **RELEASE_NOTES_v1.8.0.md** - Detailní release notes s migrační příručkou
 
 ## Release Notes
+
+### v2.3.0 (Dashboard & Configuration Improvements - November 2024)
+
+#### 📊 Vylepšený Dashboard
+
+**Nová sekce: Aktuální konfigurace**
+- Zobrazení aktivní strategie nabíjení
+- Aktuální SOC baterie v reálném čase
+- Status test mode (ON/OFF)
+- Čas příštího naplánovaného nabíjení
+- Barevné indikátory stavu
+
+**Data Status Panel**
+- Přehled dostupnosti dat pro grafy
+- Počet slotů v rozvrhu nabíjení
+- Počet hodnot SOC forecastu
+- Počet cenových bodů
+- Počet hodnot solární predikce
+
+**Rozšířený Test Mode**
+- Detailní vysvětlení co je test mode
+- Kdy a jak ho používat
+- Co lze testovat
+- Vizuální indikace stavu (oranžová/zelená)
+- Seznam use cases pro testování
+
+**Console Debugging**
+- Automatické logování načtených dat
+- Debug info pro inicializaci grafů
+- Lepší error handling v SOC grafu
+- Podpora pro null hodnoty (spanGaps)
+
+#### ⚙️ Vylepšená Konfigurace
+
+**Emoji Ikony**
+- Vizuální identifikace každého pole
+- Lepší orientace ve formuláři
+- Konzistentní použití v celém UI
+
+**Detailní Popisky**
+- Vysvětlení každého parametru
+- Doporučené hodnoty
+- Příklady použití
+- Formát dat a jednotky
+
+**Multi-line Descriptions**
+- Vysvětlení klíčových konceptů
+- Hystereze a její účel
+- Critical hours funkčnost
+- ML predikce chování
+
+**Kontextová Nápověda**
+- Hints přímo v konfiguraci
+- Tipy pro začátečníky
+- Odkazy na další dokumentaci
+
+#### 🔧 Technické Změny
+
+**Branding Update**
+- Výrobce změněn na "Martin Rak"
+- Model: "Smart Battery Charging Controller"
+- Firmware verze shodná s tag číslem (2.3.0)
+- Konzistentní branding napříč UI
+
+**Dokumentace**
+- CHANGELOG.md pro HACS
+- Rozšířené code comments
+- Vylepšená hlavička coordinator.py
+- Atribuce autora
+
+**Dashboard Footer**
+- Aktualizováno na v2.3.0
+- Zobrazení autora (Martin Rak)
+- Správný název produktu
+
+#### 🐛 Debugging Improvements
+
+**SOC Forecast Chart**
+- Přidáno error logování
+- Kontrola existence canvas elementu
+- Validace dat před vykreslením
+- SpanGaps pro lepší zobrazení
+
+**Data Validation**
+- Debug výpis počtu datových bodů
+- Kontrola dostupnosti senzorů
+- Logování prvních hodnot
+- Error handling pro chybějící data
+
+#### 📦 Migrace z v2.2.0
+
+**Žádné breaking changes** - Plně kompatibilní
+- Všechny existující konfigurace fungují beze změny
+- Žádná nutná ruční migrace
+- Pouze vizuální a UX vylepšení
+- Dashboard automaticky použije nové features
+
+**Doporučené akce po upgrade:**
+1. Prohlédnout si novou sekci "Aktuální konfigurace"
+2. Zkontrolovat Data Status panel
+3. Vyzkoušet vylepšený test mode
+4. Zkontrolovat console pro debug info (F12 v browseru)
+5. Případně upravit konfiguraci s novými hinty
+
+---
 
 ### v2.2.0 (Multi-Language, New Strategies & Charts - November 2024)
 
