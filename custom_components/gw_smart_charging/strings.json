@@ -30,9 +30,14 @@
           "critical_hours_start": "Critical Hours Start (hour)",
           "critical_hours_end": "Critical Hours End (hour)",
           "critical_hours_soc_pct": "Critical Hours SOC (%)",
+          "charging_strategy": "Charging Strategy",
           "enable_ml_prediction": "Enable ML Consumption Prediction",
           "enable_automation": "Enable Automatic Charging Control",
-          "switch_on_means_charge": "Switch ON Means Charge"
+          "switch_on_means_charge": "Switch ON Means Charge",
+          "test_mode": "Test Mode (simulation only)",
+          "nanogreen_cheapest_sensor": "Nanogreen Cheapest Hours Sensor",
+          "additional_switches": "Additional Switches (comma-separated)",
+          "switch_price_threshold": "Switch Price Threshold (CZK/kWh)"
         }
       }
     },
@@ -74,9 +79,14 @@
           "critical_hours_start": "Critical Hours Start",
           "critical_hours_end": "Critical Hours End",
           "critical_hours_soc_pct": "Critical Hours SOC (%)",
+          "charging_strategy": "Charging Strategy",
           "enable_ml_prediction": "Enable ML Prediction",
           "enable_automation": "Enable Automation",
-          "switch_on_means_charge": "Switch ON = Charge"
+          "switch_on_means_charge": "Switch ON = Charge",
+          "test_mode": "Test Mode",
+          "nanogreen_cheapest_sensor": "Nanogreen Sensor",
+          "additional_switches": "Additional Switches",
+          "switch_price_threshold": "Switch Price Threshold"
         }
       }
     }

@@ -1,17 +1,24 @@
 # GW Smart Charging
 
-Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 2.0.0** - Nanogreen integrace, pokročilé ML vzory, řízení přídavných spínačů.
+Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie GoodWe pomocí solárního forecastu a cen elektřiny. **Verze 2.1.0** - Strategie nabíjení, vylepšená predikce cen, opravený dashboard.
 
 ## Funkce
 
-### 🆕 Nové ve v2.0.0
+### 🆕 Nové ve v2.1.0
+
+🎯 **Strategie nabíjení** - 5 různých strategií: dynamická optimalizace, 4/6 nejlevnějších hodin, Nanogreen, cenový práh  
+⚡ **Vylepšená 12h predikce** - Chytřejší detekce cenových trendů s 10% prahem a čekání na absolutní minimum  
+🔧 **Opravený dashboard** - Vyřešena chyba JSON parsování, fungující tlačítka aktivace/deaktivace  
+📦 **Konzistentní verze** - Všechny komponenty zobrazují správnou verzi 2.1.0  
+📝 **Lepší logování** - Detailní informace o výběru strategie a cenových rozhodnutích  
+
+### Nové ve v2.0.0
 
 🎛️ **Nanogreen integrace** - Automatické nabíjení během 5 nejlevnějších hodin z `sensor.is_currently_in_five_cheapest_hours`  
 🧠 **Pokročilé ML vzory** - Samostatné predikce pro pracovní dny, víkendy a svátky  
 🔌 **Řízení přídavných spínačů** - Automatické zapínání/vypínání spínačů podle ceny elektřiny  
 🧪 **Testovací režim** - Bezpečné testování a ladění bez skutečného ovládání  
 🌍 **Detekce svátků** - Rozpoznání českých svátků pro lepší predikce  
-🐛 **Oprava dashboardu** - Vyřešen error 500 při zobrazení dashboardu
 
 ### Základní funkce
 
@@ -257,6 +264,82 @@ Integrace se nyní zobrazuje v panelu Zařízení a Služby:
 - **RELEASE_NOTES_v1.8.0.md** - Detailní release notes s migrační příručkou
 
 ## Release Notes
+
+### v2.1.0 (Dashboard & Strategy Update - November 2024)
+
+#### 🔧 Opravy kritických chyb
+
+**Dashboard 24-Hour Prediction Plan**
+- Opraven JSON parsing error při načítání 24h predikce
+- Data jsou nyní embedována přímo v HTML z backendu
+- Eliminovány problémy s autentizací API
+- Rychlejší a spolehlivější načítání
+
+**Tlačítka Aktivace/Deaktivace**
+- Opravena nefunkční tlačítka ovládání integrace
+- Přidána automatická autentizace pomocí tokenů
+- Vizuální zpětná vazba o stavu tlačítek
+- Automatické obnovení stránky po změně
+
+#### ⚡ Vylepšení logiky nabíjení
+
+**12-hodinový Lookahead**
+- Změna z 24hodinového na **12hodinové** okno pro přesnější predikci
+- **10% práh** pro detekci klesajících cen
+- Čekání na minimum pouze pokud jsou nejlevnější ceny **alespoň 1 hodinu** v budoucnu
+- Lepší porovnání aktuální vs budoucí průměrné ceny
+
+#### 🎯 Strategie nabíjení (NOVÉ!)
+
+**5 konfigurovatelných strategií:**
+
+1. **Dynamická optimalizace** (výchozí)
+   - Chytrá optimalizace na základě cen, předpovědí a ML vzorů
+   - Čeká na nejlepší ceny při klesajícím trendu
+   - Nejlepší pro maximální úspory
+
+2. **4 nejlevnější hodiny**
+   - Nabíjení vždy během 4 nejlevnějších hodin v příštích 24h
+   - Jednoduché a předvídatelné
+   - Vhodné pro běžné baterie
+
+3. **6 nejlevnějších hodin**
+   - Nabíjení během 6 nejlevnějších hodin
+   - Více příležitostí k nabíjení
+   - Vhodné pro větší baterie nebo spotřebu
+
+4. **Pouze Nanogreen**
+   - Používá pouze Nanogreen senzor pro rozhodování
+   - Nabíjí když je `sensor.is_currently_in_five_cheapest_hours` ON
+   - Pro uživatele důvěřující Nanogreen
+
+5. **Cenový práh**
+   - Nabíjí kdykoli cena klesne pod "Always Charge Price"
+   - Nejagresivnější nabíjení
+   - Vhodné pro velmi levné noční tarify
+
+**Konfigurace:**
+- Dostupné v průvodci nastavením
+- Lze změnit přes Options Flow
+- Plně zpětně kompatibilní (výchozí = dynamická)
+
+#### 📦 Aktualizace verzí
+
+- manifest.json → 2.1.0
+- Dashboard → 2.1.0
+- Lovelace Card → 2.1.0
+- Konzistentní zobrazování verzí
+
+#### 🔄 Migrace z v2.0.0
+
+**Plně zpětně kompatibilní** - žádné breaking changes
+- Všechny existující konfigurace fungují beze změny
+- Výchozí strategie je dynamická (stejné chování jako v2.0)
+- Není potřeba žádná ruční migrace
+
+Více informací v `RELEASE_NOTES_v2.1.0.md`.
+
+---
 
 ### v2.0.0 (Major Feature Release - November 2024)
 
