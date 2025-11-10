@@ -943,7 +943,7 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                                      max_charge: float, eff: float, interval_hours: float = 0.25) -> List[int]:
         """Find optimal charging slots considering price trends and energy needs.
         
-        NEW v1.9.5: Enhanced logic to wait for cheapest prices in decreasing trend.
+        ENHANCED v2.1.0: Improved 12-hour lookahead to find absolute lowest prices.
         
         Args:
             prices: List of prices for 96 slots
@@ -978,9 +978,10 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         # Group prices into windows and find decreasing trends
         current_time_slot = datetime.now().hour * 4 + (datetime.now().minute // 15)
         
-        # Look ahead for next 24 hours (96 slots)
+        # ENHANCED v2.1.0: Look ahead for next 12 hours (48 slots) specifically
+        lookahead_slots = 48  # 12 hours * 4 slots/hour
         valid_slots = []
-        for slot in range(current_time_slot, min(current_time_slot + 96, 96)):
+        for slot in range(current_time_slot, min(current_time_slot + lookahead_slots, 96)):
             price = prices[slot] if slot < len(prices) else 999.0
             if price > 0:  # Valid price
                 valid_slots.append((slot, price))
@@ -988,32 +989,50 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         if not valid_slots:
             return []
         
-        # Sort by price to find cheapest slots
+        # Sort by price to find absolute cheapest slots
         valid_slots.sort(key=lambda x: x[1])
         
-        # NEW v1.9.5: Check for decreasing price trend
-        # If prices are generally decreasing, wait for the minimum
-        if len(valid_slots) >= 4:
-            # Calculate trend: compare first quarter vs last quarter average
-            quarter_size = len(valid_slots) // 4
-            early_avg = sum(p for _, p in valid_slots[:quarter_size]) / quarter_size
-            late_avg = sum(p for _, p in valid_slots[-quarter_size:]) / quarter_size
+        # ENHANCED v2.1.0: Improved decreasing price trend detection
+        # Check if prices are decreasing by comparing current vs future averages
+        is_decreasing_trend = False
+        prices_later = False
+        
+        if len(valid_slots) >= 8:  # Need at least 2 hours of data
+            # Get current price (first available slot)
+            current_price = prices[current_time_slot] if current_time_slot < len(prices) else valid_slots[0][1]
             
-            is_decreasing_trend = late_avg < early_avg * 0.95  # 5% decrease = trend
+            # Calculate average of cheapest slots in the 12-hour window
+            num_cheap_slots = min(slots_needed * 2, len(valid_slots) // 2)
+            cheapest_avg = sum(p for _, p in valid_slots[:num_cheap_slots]) / num_cheap_slots if num_cheap_slots > 0 else current_price
             
-            if is_decreasing_trend:
-                _LOGGER.info("Detected decreasing price trend - waiting for minimum prices")
-                # Take cheapest slots from the later half (where prices are lower)
-                midpoint = len(valid_slots) // 2
-                cheapest_slots = [s for s, p in valid_slots[midpoint:midpoint + slots_needed]]
+            # Calculate when the cheapest slots occur (early vs late in window)
+            cheapest_slot_times = [s for s, p in valid_slots[:num_cheap_slots]]
+            avg_cheapest_time = sum(cheapest_slot_times) / len(cheapest_slot_times) if cheapest_slot_times else current_time_slot
+            
+            is_decreasing_trend = cheapest_avg < current_price * 0.90  # Prices will drop by at least 10%
+            prices_later = avg_cheapest_time > current_time_slot + 4  # Cheapest prices are at least 1 hour away
+            
+            if is_decreasing_trend and prices_later:
+                _LOGGER.info(
+                    f"Detected decreasing price trend: current={current_price:.2f}, "
+                    f"cheapest_avg={cheapest_avg:.2f} - waiting for absolute minimum prices"
+                )
+                # Wait for the absolute cheapest slots within the 12-hour window
+                # Take only the absolutely cheapest slots needed
+                cheapest_slots = [s for s, p in valid_slots[:slots_needed]]
             else:
-                # Normal case: just take cheapest slots overall
+                # Normal case: take cheapest available slots but prefer sooner if prices are similar
+                # This prevents waiting unnecessarily if prices aren't significantly different
+                _LOGGER.info(f"No significant decreasing trend - charging at earliest cheap slots")
                 cheapest_slots = [s for s, p in valid_slots[:slots_needed]]
         else:
+            # Not enough data - just take cheapest available
             cheapest_slots = [s for s, p in valid_slots[:slots_needed]]
         
-        # Verify slots are within reasonable time window (next 8 hours for non-critical)
-        max_wait_slots = 32  # 8 hours
+        # Verify slots are within reasonable time window
+        # For decreasing trend, allow waiting up to 12 hours
+        # For normal case, prefer within 8 hours
+        max_wait_slots = lookahead_slots if is_decreasing_trend and prices_later else 32  # 12 or 8 hours
         filtered_slots = [s for s in cheapest_slots if s <= current_time_slot + max_wait_slots]
         
         if not filtered_slots and cheapest_slots:
