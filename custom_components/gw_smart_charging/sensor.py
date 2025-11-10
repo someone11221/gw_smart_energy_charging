@@ -21,9 +21,9 @@ def get_device_info(entry: ConfigEntry) -> DeviceInfo:
     return DeviceInfo(
         identifiers={(DOMAIN, entry.entry_id)},
         name=DEFAULT_NAME,
-        manufacturer="GW Energy Solutions",
+        manufacturer="Martin Rak",
         model="Smart Battery Charging Controller",
-        sw_version="1.9.0",
+        sw_version="2.3.0",
         configuration_url="https://github.com/someone11221/gw_smart_energy_charging",
     )
 
