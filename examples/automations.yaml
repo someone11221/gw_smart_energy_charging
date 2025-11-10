@@ -1,0 +1,150 @@
+# Example Automations for GW Smart Charging v1.4.0
+# ===================================================
+# Note: V 1.4.0 integrace sama automaticky volá nabíjecí skripty každé 2 minuty.
+# Tyto automatizace jsou pouze příklady pro pokročilé případy nebo notifikace.
+
+# 1. Notifikace při změně režimu nabíjení
+# ----------------------------------------
+- alias: "GW Charging: Notifikace při změně režimu"
+  description: "Pošle notifikaci při změně režimu nabíjení"
+  trigger:
+    - platform: state
+      entity_id: sensor.gw_smart_charging_schedule
+  condition:
+    - condition: template
+      value_template: "{{ trigger.from_state.state != trigger.to_state.state }}"
+  action:
+    - service: notify.mobile_app
+      data:
+        title: "GW Smart Charging"
+        message: >
+          Režim změněn: {{ trigger.to_state.state }}
+          Cena: {{ state_attr('sensor.gw_smart_charging_schedule', 'current_price') }} CZK/kWh
+          SOC: {{ state_attr('sensor.gw_smart_charging_schedule', 'current_soc') }}%
+
+# 2. Notifikace při zahájení nabíjení z gridu
+# -------------------------------------------
+- alias: "GW Charging: Notifikace zahájení grid nabíjení"
+  description: "Upozornění když začne nabíjení ze sítě"
+  trigger:
+    - platform: state
+      entity_id: sensor.gw_smart_charging_schedule
+      to: "grid_charge_cheap"
+    - platform: state
+      entity_id: sensor.gw_smart_charging_schedule
+      to: "grid_charge_optimal"
+    - platform: state
+      entity_id: sensor.gw_smart_charging_schedule
+      to: "grid_charge_critical"
+  action:
+    - service: notify.persistent_notification
+      data:
+        title: "⚡ Grid nabíjení zahájeno"
+        message: >
+          Režim: {{ states('sensor.gw_smart_charging_schedule') }}
+          Cena: {{ state_attr('sensor.gw_smart_charging_schedule', 'current_price') }} CZK/kWh
+
+# 3. Manuální přepnutí do režimu nabíjení
+# ----------------------------------------
+# Pokud chcete manuálně vynutit nabíjení mimo plán integrace
+- alias: "GW Charging: Manuální vynucené nabíjení"
+  description: "Manuální tlačítko pro vynucení nabíjení"
+  trigger:
+    - platform: state
+      entity_id: input_boolean.force_charging  # Vytvořte si tento helper
+      to: "on"
+  action:
+    - service: script.turn_on
+      target:
+        entity_id: script.nabijeni_on
+    - delay:
+        seconds: 2
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.force_charging
+
+# 4. Bezpečnostní automatizace - zastavit nabíjení při vysoké ceně
+# -----------------------------------------------------------------
+# Záložní ochrana pokud by integrace selhala
+- alias: "GW Charging: Safety - Stop při vysoké ceně"
+  description: "Bezpečnostní zastavení nabíjení pokud cena překročí limit"
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.gw_smart_charging_price
+      above: 5.0  # CZK/kWh - nastavte podle potřeby
+  condition:
+    - condition: state
+      entity_id: switch.gw_smart_charging_auto_charging
+      state: "on"
+  action:
+    - service: script.turn_on
+      target:
+        entity_id: script.nabijeni_off
+    - service: notify.persistent_notification
+      data:
+        title: "⚠️ GW Charging: Bezpečnostní zastavení"
+        message: >
+          Nabíjení zastaveno kvůli vysoké ceně: {{ states('sensor.gw_smart_charging_price') }} CZK/kWh
+
+# 5. Denní přehled plánu nabíjení
+# --------------------------------
+- alias: "GW Charging: Ranní přehled plánu"
+  description: "Denní notifikace s přehledem plánu nabíjení"
+  trigger:
+    - platform: time
+      at: "06:00:00"
+  action:
+    - service: notify.mobile_app
+      data:
+        title: "📊 GW Charging - Denní plán"
+        message: >
+          Nabíjecích slotů dnes: {{ state_attr('sensor.gw_smart_charging_diagnostics', 'charging_slots_today') }}
+          Další nabíjení: {{ state_attr('sensor.gw_smart_charging_diagnostics', 'next_charge_time') }}
+          Cena: {{ state_attr('sensor.gw_smart_charging_diagnostics', 'next_charge_price') }} CZK/kWh
+          Aktuální SOC: {{ states('sensor.battery_state_of_charge') }}%
+
+# 6. Statistika - logování režimů
+# --------------------------------
+- alias: "GW Charging: Logování režimů"
+  description: "Zaznamenává čas strávený v jednotlivých režimech"
+  trigger:
+    - platform: state
+      entity_id: sensor.gw_smart_charging_schedule
+  action:
+    - service: logbook.log
+      data:
+        name: "GW Smart Charging"
+        message: >
+          Režim změněn na {{ states('sensor.gw_smart_charging_schedule') }}
+          (cena: {{ state_attr('sensor.gw_smart_charging_schedule', 'current_price') }} CZK/kWh,
+           SOC: {{ state_attr('sensor.gw_smart_charging_schedule', 'current_soc') }}%)
+
+# 7. Disable automatizace při údržbě
+# -----------------------------------
+- alias: "GW Charging: Disable při údržbě"
+  description: "Vypne automatizaci během údržby"
+  trigger:
+    - platform: state
+      entity_id: input_boolean.battery_maintenance  # Vytvořte si tento helper
+      to: "on"
+  action:
+    - service: script.turn_on
+      target:
+        entity_id: script.nabijeni_off
+    - service: notify.persistent_notification
+      data:
+        title: "🔧 GW Charging - Režim údržby"
+        message: "Automatické nabíjení vypnuto kvůli údržbě baterie"
+
+# Re-enable po skončení údržby
+- alias: "GW Charging: Enable po údržbě"
+  description: "Zapne automatizaci po údržbě"
+  trigger:
+    - platform: state
+      entity_id: input_boolean.battery_maintenance
+      to: "off"
+  action:
+    - service: notify.persistent_notification
+      data:
+        title: "✅ GW Charging - Údržba dokončena"
+        message: "Automatické nabíjení obnoveno"

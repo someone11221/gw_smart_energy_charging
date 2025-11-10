@@ -1,0 +1,346 @@
+# Example Lovelace Cards for GW Smart Charging v1.4.0
+# =====================================================
+
+# ZÁKLADNÍ DASHBOARD - Kopírujte přímo do Lovelace editoru
+# ---------------------------------------------------------
+
+# 1. KOMPLETNÍ DASHBOARD VIEW
+# ----------------------------
+title: GW Smart Charging
+path: gw-charging
+icon: mdi:battery-charging
+badges: []
+cards:
+  # Status Card - Aktuální stav
+  - type: entities
+    title: "📊 GW Smart Charging - Status"
+    show_header_toggle: false
+    entities:
+      - entity: sensor.gw_smart_charging_diagnostics
+        name: Status integrace
+        icon: mdi:information
+      - type: divider
+      - entity: sensor.gw_smart_charging_schedule
+        name: Aktuální režim
+        icon: mdi:cog
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: should_charge_now
+        name: Mělo by nabíjet
+        icon: mdi:battery-charging
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: current_price
+        name: Aktuální cena
+        suffix: " CZK/kWh"
+        icon: mdi:currency-czk
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: current_soc
+        name: Aktuální SOC
+        suffix: " %"
+        icon: mdi:battery
+      - type: divider
+      - entity: switch.gw_smart_charging_auto_charging
+        name: Automatické nabíjení
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: charging_slots_today
+        name: Nabíjecích slotů dnes
+        icon: mdi:clock-outline
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: next_charge_time
+        name: Další nabíjení
+        icon: mdi:clock-start
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: last_update
+        name: Poslední update
+        icon: mdi:update
+
+  # ApexCharts - 24h plán nabíjení
+  - type: custom:apexcharts-card
+    header:
+      show: true
+      title: "📈 Plán nabíjení - 24 hodin"
+      show_states: true
+      colorize_states: true
+    graph_span: 24h
+    span:
+      start: day
+    now:
+      show: true
+      label: Nyní
+      color: red
+    yaxis:
+      - id: power
+        decimals: 1
+        min: 0
+        apex_config:
+          title:
+            text: Výkon (kW)
+          labels:
+            formatter: |
+              EVAL:function(value) {
+                return value.toFixed(1) + ' kW';
+              }
+      - id: soc
+        opposite: true
+        decimals: 0
+        min: 0
+        max: 100
+        apex_config:
+          title:
+            text: SOC (%)
+          labels:
+            formatter: |
+              EVAL:function(value) {
+                return value.toFixed(0) + '%';
+              }
+    apex_config:
+      chart:
+        height: 400px
+      legend:
+        show: true
+        position: bottom
+      tooltip:
+        enabled: true
+        shared: true
+    series:
+      - entity: sensor.gw_smart_charging_series_pv
+        name: Solární výroba
+        type: area
+        color: orange
+        opacity: 0.3
+        yaxis_id: power
+        data_generator: |
+          return entity.attributes.data_15min.map((value, index) => {
+            return [new Date(entity.attributes.timestamps[index]).getTime(), value];
+          });
+      
+      - entity: sensor.gw_smart_charging_series_load
+        name: Spotřeba domu
+        type: line
+        color: blue
+        stroke_width: 2
+        yaxis_id: power
+        data_generator: |
+          return entity.attributes.data_15min.map((value, index) => {
+            return [new Date(entity.attributes.timestamps[index]).getTime(), value];
+          });
+      
+      - entity: sensor.gw_smart_charging_series_battery_charge
+        name: Nabíjení baterie
+        type: column
+        color: green
+        yaxis_id: power
+        data_generator: |
+          return entity.attributes.data_15min.map((value, index) => {
+            return [new Date(entity.attributes.timestamps[index]).getTime(), value];
+          });
+      
+      - entity: sensor.gw_smart_charging_series_battery_discharge
+        name: Vybíjení baterie
+        type: column
+        color: red
+        yaxis_id: power
+        data_generator: |
+          return entity.attributes.data_15min.map((value, index) => {
+            return [new Date(entity.attributes.timestamps[index]).getTime(), value];
+          });
+      
+      - entity: sensor.gw_smart_charging_series_soc_forecast
+        name: SOC prognóza
+        type: line
+        color: purple
+        stroke_width: 3
+        curve: smooth
+        yaxis_id: soc
+        data_generator: |
+          return entity.attributes.data_15min.map((value, index) => {
+            return [new Date(entity.attributes.timestamps[index]).getTime(), value];
+          });
+
+  # Ceny elektřiny s prahy
+  - type: custom:apexcharts-card
+    header:
+      show: true
+      title: "💰 Ceny elektřiny - 24 hodin"
+    graph_span: 24h
+    span:
+      start: day
+    now:
+      show: true
+      label: Nyní
+    yaxis:
+      - id: price
+        decimals: 2
+        apex_config:
+          title:
+            text: Cena (CZK/kWh)
+    apex_config:
+      chart:
+        height: 250px
+      annotations:
+        yaxis:
+          - y: 1.5
+            borderColor: '#00C851'
+            strokeDashArray: 5
+            label:
+              text: 'Always Charge (1.5 CZK)'
+              style:
+                background: '#00C851'
+                color: '#fff'
+          - y: 4.0
+            borderColor: '#ff4444'
+            strokeDashArray: 5
+            label:
+              text: 'Never Charge (4.0 CZK)'
+              style:
+                background: '#ff4444'
+                color: '#fff'
+    series:
+      - entity: sensor.gw_smart_charging_price
+        name: Cena elektřiny
+        type: line
+        color: '#ffbb33'
+        stroke_width: 3
+        yaxis_id: price
+        data_generator: |
+          return entity.attributes.price_15min.map((value, index) => {
+            return [new Date(entity.attributes.timestamps[index]).getTime(), value];
+          });
+
+  # Konfigurace - přehled
+  - type: entities
+    title: "⚙️ Konfigurace"
+    show_header_toggle: false
+    entities:
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: automation_enabled
+        name: Automatizace povolena
+        icon: mdi:robot
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: charging_on_script
+        name: Script ON
+        icon: mdi:script-text
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: charging_off_script
+        name: Script OFF
+        icon: mdi:script-text-outline
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: update_interval_minutes
+        name: Update interval
+        suffix: " min"
+        icon: mdi:update
+      - type: divider
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: forecast_source
+        name: Forecast zdroj
+        icon: mdi:weather-sunny
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: forecast_confidence
+        name: Forecast confidence
+        icon: mdi:chart-line
+
+# 2. KOMPAKTNÍ KARTA - pro hlavní dashboard
+# ------------------------------------------
+  - type: vertical-stack
+    cards:
+      - type: glance
+        title: GW Smart Charging
+        show_name: true
+        show_state: true
+        entities:
+          - entity: sensor.gw_smart_charging_schedule
+            name: Režim
+          - entity: sensor.gw_smart_charging_price
+            name: Cena
+          - entity: sensor.gw_smart_charging_soc_forecast
+            name: SOC
+          - entity: switch.gw_smart_charging_auto_charging
+            name: Auto
+      
+      - type: horizontal-stack
+        cards:
+          - type: button
+            entity: script.nabijeni_on
+            name: Nabíjení ON
+            icon: mdi:battery-charging
+            tap_action:
+              action: call-service
+              service: script.turn_on
+              service_data:
+                entity_id: script.nabijeni_on
+          
+          - type: button
+            entity: script.nabijeni_off
+            name: Nabíjení OFF
+            icon: mdi:battery-off
+            tap_action:
+              action: call-service
+              service: script.turn_on
+              service_data:
+                entity_id: script.nabijeni_off
+
+# 3. MOBILE-FRIENDLY KARTA
+# -------------------------
+  - type: vertical-stack
+    cards:
+      - type: markdown
+        content: |
+          ## 🔋 GW Smart Charging
+          
+          **Režim:** {{ states('sensor.gw_smart_charging_schedule') }}  
+          **Cena:** {{ state_attr('sensor.gw_smart_charging_diagnostics', 'current_price') }} CZK/kWh  
+          **SOC:** {{ state_attr('sensor.gw_smart_charging_diagnostics', 'current_soc') }}%  
+          **Nabíjení:** {% if state_attr('sensor.gw_smart_charging_diagnostics', 'should_charge_now') %}✅ ANO{% else %}❌ NE{% endif %}
+          
+          ---
+          
+          **Dnes nabíjení:** {{ state_attr('sensor.gw_smart_charging_diagnostics', 'charging_slots_today') }} slotů  
+          **Další:** {{ state_attr('sensor.gw_smart_charging_diagnostics', 'next_charge_time') }}
+      
+      - type: entities
+        entities:
+          - entity: switch.gw_smart_charging_auto_charging
+
+# 4. DIAGNOSTICKÁ KARTA - pro troubleshooting
+# -------------------------------------------
+  - type: entities
+    title: "🔍 Diagnostika"
+    show_header_toggle: false
+    state_color: true
+    entities:
+      - entity: sensor.gw_smart_charging_diagnostics
+        name: Diagnostický senzor
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: last_script_state
+        name: Poslední stav skriptu
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: current_slot
+        name: Aktuální slot
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: total_schedule_slots
+        name: Celkem slotů
+      - type: attribute
+        entity: sensor.gw_smart_charging_diagnostics
+        attribute: mode_distribution
+        name: Distribuce režimů
+      - type: divider
+      - entity: sensor.gw_smart_charging_forecast_status
+        name: Status integrace
+      - entity: sensor.gw_smart_charging_forecast
+        name: Forecast peak
+      - entity: sensor.gw_smart_charging_price
+        name: Aktuální cena
