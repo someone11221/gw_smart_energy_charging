@@ -43,6 +43,8 @@ class GWSmartChargingDashboardView(HomeAssistantView):
     def _build_dashboard_html(self, integration_data: dict) -> str:
         """Build the dashboard HTML."""
         
+        import json
+        
         # Get entities from all coordinators
         entities_html = ""
         sensors_count = 0
@@ -71,6 +73,21 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                     sensors_count += 1
                 elif entity.domain == "switch":
                     switches_count += 1
+        
+        # Get schedule data from sensor state
+        schedule_data = []
+        schedule_entity = self.hass.states.get('sensor.gw_smart_charging_schedule')
+        if schedule_entity and schedule_entity.attributes:
+            schedule_data = schedule_entity.attributes.get('schedule', [])
+        
+        # Get switch state
+        switch_state = "unknown"
+        switch_entity = self.hass.states.get('switch.gw_smart_charging_auto_charging')
+        if switch_entity:
+            switch_state = switch_entity.state
+        
+        # Convert schedule data to JSON for embedding
+        schedule_json = json.dumps(schedule_data)
         
         html = f"""
         <!DOCTYPE html>
@@ -561,17 +578,36 @@ class GWSmartChargingDashboardView(HomeAssistantView):
             
             <!-- NEW v1.9.5: JavaScript for controls and prediction timeline -->
             <script>
+                // Embedded schedule data from backend (fixes JSON parsing error)
+                const SCHEDULE_DATA = {schedule_json};
+                const SWITCH_STATE = '{switch_state}';
+                
+                // Get authentication token from Home Assistant
+                function getAuthToken() {{
+                    // Try to get token from localStorage (Home Assistant stores it there)
+                    return localStorage.getItem('hassTokens') ? 
+                           JSON.parse(localStorage.getItem('hassTokens')).access_token : null;
+                }}
+                
                 // Toggle integration on/off
                 async function toggleIntegration(activate) {{
                     const statusDiv = document.getElementById('control-status');
                     const entityId = 'switch.gw_smart_charging_auto_charging';
                     
                     try {{
+                        const token = getAuthToken();
+                        const headers = {{
+                            'Content-Type': 'application/json',
+                        }};
+                        
+                        // Add authorization header if token is available
+                        if (token) {{
+                            headers['Authorization'] = `Bearer ${{token}}`;
+                        }}
+                        
                         const response = await fetch('/api/services/switch/' + (activate ? 'turn_on' : 'turn_off'), {{
                             method: 'POST',
-                            headers: {{
-                                'Content-Type': 'application/json',
-                            }},
+                            headers: headers,
                             body: JSON.stringify({{
                                 entity_id: entityId
                             }})
@@ -582,15 +618,21 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                             statusDiv.style.background = '#4CAF50';
                             statusDiv.style.color = 'white';
                             statusDiv.textContent = activate ? '✅ Integration activated successfully' : '🛑 Integration deactivated successfully';
-                            setTimeout(() => {{ statusDiv.style.display = 'none'; }}, 5000);
+                            setTimeout(() => {{ 
+                                statusDiv.style.display = 'none';
+                                // Reload page to show updated state
+                                window.location.reload();
+                            }}, 2000);
                         }} else {{
-                            throw new Error('Failed to toggle integration');
+                            const errorText = await response.text();
+                            throw new Error(`Failed to toggle integration: ${{response.status}} - ${{errorText}}`);
                         }}
                     }} catch (error) {{
                         statusDiv.style.display = 'block';
                         statusDiv.style.background = '#f44336';
                         statusDiv.style.color = 'white';
                         statusDiv.textContent = '❌ Error: ' + error.message;
+                        console.error('Toggle error:', error);
                     }}
                 }}
                 
@@ -604,21 +646,18 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                     setTimeout(() => {{ statusDiv.style.display = 'none'; }}, 5000);
                 }}
                 
-                // Load and display prediction timeline
-                async function loadPredictionTimeline() {{
+                // Load and display prediction timeline using embedded data
+                function loadPredictionTimeline() {{
                     const timeline = document.getElementById('prediction-timeline');
                     
                     try {{
-                        const response = await fetch('/api/states/sensor.gw_smart_charging_schedule');
-                        const data = await response.json();
+                        const schedule = SCHEDULE_DATA;
                         
-                        if (data && data.attributes && data.attributes.schedule) {{
-                            const schedule = data.attributes.schedule;
+                        if (schedule && schedule.length > 0) {{
                             let html = '';
                             
                             // Group by hours and show major actions
                             let lastMode = null;
-                            let groupStart = null;
                             
                             schedule.forEach((slot, idx) => {{
                                 const mode = slot.mode || 'idle';
@@ -657,16 +696,49 @@ class GWSmartChargingDashboardView(HomeAssistantView):
                                 timeline.innerHTML = '<p style="color: #666;">No significant charging/discharging actions planned for next 24h</p>';
                             }}
                         }} else {{
-                            timeline.innerHTML = '<p style="color: #666;">Schedule data not available</p>';
+                            timeline.innerHTML = '<p style="color: #666;">Schedule data not available yet. Integration may still be initializing.</p>';
                         }}
                     }} catch (error) {{
                         timeline.innerHTML = '<p style="color: #f44336;">Error loading prediction: ' + error.message + '</p>';
+                        console.error('Prediction error:', error);
                     }}
                 }}
                 
-                // Load prediction on page load and refresh every 15 minutes
+                // Update button states based on current switch state
+                function updateButtonStates() {{
+                    const activateBtn = document.querySelector('.btn-primary');
+                    const deactivateBtn = document.querySelector('.btn-danger');
+                    
+                    if (SWITCH_STATE === 'on') {{
+                        if (activateBtn) {{
+                            activateBtn.style.opacity = '0.5';
+                            activateBtn.style.cursor = 'not-allowed';
+                        }}
+                        if (deactivateBtn) {{
+                            deactivateBtn.style.opacity = '1';
+                            deactivateBtn.style.cursor = 'pointer';
+                        }}
+                    }} else if (SWITCH_STATE === 'off') {{
+                        if (activateBtn) {{
+                            activateBtn.style.opacity = '1';
+                            activateBtn.style.cursor = 'pointer';
+                        }}
+                        if (deactivateBtn) {{
+                            deactivateBtn.style.opacity = '0.5';
+                            deactivateBtn.style.cursor = 'not-allowed';
+                        }}
+                    }}
+                }}
+                
+                // Load prediction on page load
+                document.addEventListener('DOMContentLoaded', function() {{
+                    loadPredictionTimeline();
+                    updateButtonStates();
+                }});
+                
+                // Also call immediately in case DOMContentLoaded already fired
                 loadPredictionTimeline();
-                setInterval(loadPredictionTimeline, 15 * 60 * 1000); // Refresh every 15 minutes
+                updateButtonStates();
             </script>
         </body>
         </html>
