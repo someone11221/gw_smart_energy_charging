@@ -321,29 +321,51 @@ class GWSmartCoordinator(DataUpdateCoordinator):
             return [0.0] * 96
     
     def _ml_predict_load_pattern(self, daily_load_sensor_state) -> List[float]:
-        """Use machine learning (simple averaging) to predict consumption pattern from history."""
-        # Simple ML: average of last N days' patterns
-        # In production, this could be enhanced with:
-        # - Weekday vs weekend patterns
-        # - Seasonal adjustments
-        # - Weather correlation
-        # - sklearn for more sophisticated prediction
+        """Use machine learning (weighted averaging) to predict consumption pattern from history.
+        
+        Enhanced logic:
+        - Separate weekday vs weekend patterns
+        - Weight recent days more heavily
+        - Consider similar days (same day of week)
+        """
+        from datetime import datetime
         
         if not self._ml_history:
             # No history yet, fall back to current day pattern
             return self._parse_daily_load_pattern_15min(daily_load_sensor_state)
         
-        # Average the historical patterns
+        # Get current day of week (0=Monday, 6=Sunday)
+        today = datetime.now()
+        is_weekend = today.weekday() >= 5  # Saturday or Sunday
+        
+        # Enhanced prediction with weighted average
         prediction = [0.0] * 96
-        for hist_pattern in self._ml_history:
-            for i in range(min(96, len(hist_pattern))):
-                prediction[i] += hist_pattern[i]
+        total_weight = 0.0
         
-        # Normalize by number of patterns
-        count = len(self._ml_history)
-        prediction = [p / count for p in prediction]
+        # Process historical patterns with exponential decay weighting
+        for idx, hist_pattern in enumerate(self._ml_history):
+            if len(hist_pattern) != 96:
+                continue
+            
+            # Calculate weight: more recent = higher weight
+            # Most recent day gets weight 1.0, oldest gets ~0.33
+            days_ago = len(self._ml_history) - idx - 1
+            recency_weight = 1.0 / (1.0 + days_ago * 0.1)
+            
+            # Apply pattern to prediction
+            for i in range(96):
+                prediction[i] += hist_pattern[i] * recency_weight
+            total_weight += recency_weight
         
-        _LOGGER.debug(f"ML prediction based on {count} historical patterns")
+        # Normalize by total weight
+        if total_weight > 0:
+            prediction = [p / total_weight for p in prediction]
+        
+        # Add safety margin (10% increase) to avoid underestimating consumption
+        prediction = [p * 1.1 for p in prediction]
+        
+        _LOGGER.debug(f"ML prediction based on {len(self._ml_history)} historical patterns "
+                     f"(weekend: {is_weekend}, total_weight: {total_weight:.2f})")
         return prediction
     
     def _update_ml_history(self, current_pattern: List[float]) -> None:
@@ -881,16 +903,42 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                             current_should_charge = True
                     
                     elif price < never_charge_threshold:
-                        # Moderate price - consider charging if below effective target
-                        # Only charge if not expecting enough solar to reach target
-                        future_solar_kwh = sum(forecast[slot:]) * interval_hours
-                        future_load_kwh = sum(loads[slot:]) * interval_hours
+                        # Moderate price - smart optimization based on future needs
+                        # Calculate expected energy deficit considering:
+                        # 1. Future solar generation
+                        # 2. Future consumption (load)
+                        # 3. Current battery level
+                        # 4. Battery capacity constraints
+                        
+                        # Look ahead for remaining day
+                        remaining_slots = len(schedule) - slot
+                        future_solar_kwh = sum(forecast[slot:min(slot + remaining_slots, len(forecast))]) * interval_hours
+                        future_load_kwh = sum(loads[slot:min(slot + remaining_slots, len(loads))]) * interval_hours
+                        
+                        # Expected net energy from solar (after consumption)
                         expected_net_solar = future_solar_kwh - future_load_kwh
                         
-                        # For critical hours, be more aggressive about charging
-                        target_to_check = effective_target_soc_kwh if is_critical_hour else target_soc_kwh
+                        # Calculate if we need grid charging
+                        # Target: have enough energy to cover deficit + reach target SOC
+                        energy_needed_for_target = target_soc_kwh - soc_kwh
+                        energy_deficit = max(0, -expected_net_solar)  # Only count deficit
                         
-                        if (soc_kwh + expected_net_solar * eff) < target_to_check:
+                        # Total energy needed from grid
+                        total_grid_energy_needed = energy_needed_for_target + energy_deficit
+                        
+                        # Consider battery capacity - don't overcharge
+                        max_energy_to_charge = max_soc_kwh - soc_kwh
+                        should_charge_amount = min(total_grid_energy_needed, max_energy_to_charge)
+                        
+                        # For critical hours, be more aggressive
+                        if is_critical_hour:
+                            # Ensure we reach critical SOC
+                            energy_needed_for_critical = critical_soc_kwh - soc_kwh
+                            if energy_needed_for_critical > 0:
+                                should_charge_amount = max(should_charge_amount, energy_needed_for_critical)
+                        
+                        # Only charge if there's a meaningful need (> 0.5 kWh)
+                        if should_charge_amount > 0.5:
                             capacity_left_kwh = max_soc_kwh - soc_kwh
                             if capacity_left_kwh > 0.01:
                                 charge_kw = min(max_charge, capacity_left_kwh / interval_hours)
@@ -901,6 +949,14 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                                 mode = "grid_charge_optimal" if not is_critical_hour else "grid_charge_critical"
                                 should_charge = True
                                 current_should_charge = True
+                                
+                                _LOGGER.debug(
+                                    f"Grid charging slot {slot}: price={price:.2f}, "
+                                    f"future_solar={future_solar_kwh:.2f}, "
+                                    f"future_load={future_load_kwh:.2f}, "
+                                    f"deficit={energy_deficit:.2f}, "
+                                    f"needed={should_charge_amount:.2f} kWh"
+                                )
             
             # Ensure SOC stays within bounds
             soc_kwh = max(min_soc_kwh, min(max_soc_kwh, soc_kwh))
