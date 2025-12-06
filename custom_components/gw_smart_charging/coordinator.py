@@ -112,7 +112,10 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         self._additional_switches_state: Dict[str, bool] = {}  # Track additional switches state
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch and normalize forecast, price and load data and compute 15-min schedule."""
+        """Fetch and normalize forecast, price and load data and compute 15-min schedule.
+        
+        ENHANCED v2.4.0: Improved sensor validation and error handling.
+        """
         try:
             forecast_sensor = self.config.get(CONF_FORECAST_SENSOR)
             price_sensor = self.config.get(CONF_PRICE_SENSOR)
@@ -126,53 +129,105 @@ class GWSmartCoordinator(DataUpdateCoordinator):
 
             forecast_meta = {}
             forecast_timestamps: List[str] = []
+            
+            # NEW v2.4.0: Track sensor availability and data quality
+            sensor_status = {
+                "forecast_available": False,
+                "price_available": False,
+                "load_available": False,
+                "forecast_quality": "none",
+                "price_quality": "none",
+                "load_quality": "none",
+            }
 
             # Parse forecast (supports 15-min data from sensor.energy_production_d2)
             if forecast_sensor:
                 state = self.hass.states.get(forecast_sensor)
-                if state:
-                    _LOGGER.debug("Parsing forecast from %s", forecast_sensor)
-                    forecast_15min = self._parse_forecast_15min(state)
-                    forecast_timestamps = self._build_forecast_timestamps_15min(state)
-                    conf_score, conf_reason, source, slots = self._compute_forecast_confidence(state)
-                    forecast_meta = {
-                        "forecast_confidence": {"score": conf_score, "reason": conf_reason},
-                        "forecast_source": source,
-                        "forecast_slots_count": slots,
-                    }
+                if state and state.state not in ("unavailable", "unknown", "none", None):
+                    try:
+                        _LOGGER.debug("Parsing forecast from %s (state=%s)", forecast_sensor, state.state)
+                        forecast_15min = self._parse_forecast_15min(state)
+                        forecast_timestamps = self._build_forecast_timestamps_15min(state)
+                        conf_score, conf_reason, source, slots = self._compute_forecast_confidence(state)
+                        forecast_meta = {
+                            "forecast_confidence": {"score": conf_score, "reason": conf_reason},
+                            "forecast_source": source,
+                            "forecast_slots_count": slots,
+                        }
+                        # NEW v2.4.0: Track data quality
+                        sensor_status["forecast_available"] = True
+                        if any(f > 0 for f in forecast_15min):
+                            sensor_status["forecast_quality"] = "good" if conf_score >= 0.8 else "fair" if conf_score >= 0.5 else "poor"
+                        _LOGGER.info(f"Forecast sensor loaded: {slots} slots, quality={sensor_status['forecast_quality']}")
+                    except Exception as e:
+                        _LOGGER.error("Failed to parse forecast sensor %s: %s", forecast_sensor, e, exc_info=True)
+                        sensor_status["forecast_quality"] = "error"
                 else:
-                    _LOGGER.debug("Forecast sensor %s not found", forecast_sensor)
+                    _LOGGER.warning("Forecast sensor %s not found or unavailable (state=%s)", 
+                                  forecast_sensor, state.state if state else "None")
 
             # Parse price (from sensor.current_consumption_price_czk_kwh with today/tomorrow hourly)
             if price_sensor:
                 state = self.hass.states.get(price_sensor)
-                if state:
-                    _LOGGER.debug("Parsing prices from %s", price_sensor)
-                    price_15min = self._parse_price_15min(state)
+                if state and state.state not in ("unavailable", "unknown", "none", None):
+                    try:
+                        _LOGGER.debug("Parsing prices from %s (state=%s)", price_sensor, state.state)
+                        price_15min = self._parse_price_15min(state)
+                        # NEW v2.4.0: Validate price data
+                        sensor_status["price_available"] = True
+                        valid_prices = sum(1 for p in price_15min if p > 0)
+                        if valid_prices >= 96:
+                            sensor_status["price_quality"] = "good"
+                        elif valid_prices >= 48:
+                            sensor_status["price_quality"] = "fair"
+                        elif valid_prices >= 24:
+                            sensor_status["price_quality"] = "poor"
+                        else:
+                            sensor_status["price_quality"] = "insufficient"
+                        _LOGGER.info(f"Price sensor loaded: {valid_prices}/96 valid prices, quality={sensor_status['price_quality']}")
+                    except Exception as e:
+                        _LOGGER.error("Failed to parse price sensor %s: %s", price_sensor, e, exc_info=True)
+                        sensor_status["price_quality"] = "error"
                 else:
-                    _LOGGER.debug("Price sensor %s not found", price_sensor)
+                    _LOGGER.warning("Price sensor %s not found or unavailable (state=%s)", 
+                                  price_sensor, state.state if state else "None")
 
             # Parse load - use ML prediction if enabled, otherwise use daily sensor
             ml_enabled = self.config.get(CONF_ENABLE_ML_PREDICTION, DEFAULT_ENABLE_ML_PREDICTION)
             if daily_load_sensor:
                 state_daily = self.hass.states.get(daily_load_sensor)
-                if state_daily:
-                    if ml_enabled:
-                        _LOGGER.debug("Using ML prediction for load pattern")
-                        load_15min = self._ml_predict_load_pattern(state_daily)
-                        # Update ML history with current actual consumption
-                        current_actual = self._parse_daily_load_pattern_15min(state_daily)
-                        self._update_ml_history(current_actual)
-                    else:
-                        _LOGGER.debug("Parsing daily load pattern from %s", daily_load_sensor)
-                        load_15min = self._parse_daily_load_pattern_15min(state_daily)
+                if state_daily and state_daily.state not in ("unavailable", "unknown", "none", None):
+                    try:
+                        if ml_enabled:
+                            _LOGGER.debug("Using ML prediction for load pattern")
+                            load_15min = self._ml_predict_load_pattern(state_daily)
+                            # Update ML history with current actual consumption
+                            current_actual = self._parse_daily_load_pattern_15min(state_daily)
+                            self._update_ml_history(current_actual)
+                            sensor_status["load_quality"] = "ml_prediction"
+                        else:
+                            _LOGGER.debug("Parsing daily load pattern from %s", daily_load_sensor)
+                            load_15min = self._parse_daily_load_pattern_15min(state_daily)
+                            sensor_status["load_quality"] = "historical"
+                        sensor_status["load_available"] = True
+                        _LOGGER.info(f"Load sensor loaded: quality={sensor_status['load_quality']}")
+                    except Exception as e:
+                        _LOGGER.error("Failed to parse daily load sensor %s: %s", daily_load_sensor, e, exc_info=True)
+                        sensor_status["load_quality"] = "error"
             
             # Fallback to current consumption sensor
             if not any(load_15min) and load_sensor:
                 state = self.hass.states.get(load_sensor)
-                if state:
-                    _LOGGER.debug("Using current load from %s", load_sensor)
-                    load_15min = self._parse_current_load_15min(state)
+                if state and state.state not in ("unavailable", "unknown", "none", None):
+                    try:
+                        _LOGGER.debug("Using current load from %s", load_sensor)
+                        load_15min = self._parse_current_load_15min(state)
+                        sensor_status["load_available"] = True
+                        sensor_status["load_quality"] = "current_only"
+                        _LOGGER.info("Load sensor loaded from current consumption (fallback)")
+                    except Exception as e:
+                        _LOGGER.error("Failed to parse load sensor %s: %s", load_sensor, e, exc_info=True)
+                        sensor_status["load_quality"] = "error"
 
             # Compute 15-min optimized schedule
             schedule = self._compute_schedule_15min(forecast_15min, price_15min, load_15min)
@@ -197,6 +252,7 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                 "battery_metrics": battery_metrics,
                 "grid_metrics": grid_metrics,
                 "cost_metrics": cost_metrics,  # NEW v2.4.0
+                "sensor_status": sensor_status,  # NEW v2.4.0
                 **forecast_meta,
                 "last_update": datetime.now(timezone.utc).isoformat(),
             }
