@@ -1,10 +1,10 @@
 {
   "domain": "gw_smart_charging",
   "name": "GW Smart Charging",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "documentation": "https://github.com/someone11221/gw_smart_energy_charging",
   "requirements": [],
-  "dependencies": ["goodwe"],
+  "dependencies": [],
   "codeowners": ["@someone11221"],
   "iot_class": "local_polling",
   "config_flow": true,

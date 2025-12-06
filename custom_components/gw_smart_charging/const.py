@@ -50,6 +50,7 @@ CONF_TEST_MODE = "test_mode"
 CONF_CHARGING_STRATEGY = "charging_strategy"
 CONF_LANGUAGE = "language"
 CONF_FULL_HOUR_CHARGING = "full_hour_charging"
+CONF_COST_OPTIMIZATION_MODE = "cost_optimization_mode"
 
 # Time interval constants
 HOURS_PER_DAY = 24  # Using hourly intervals (changed from 96 15-minute intervals in v2.3.0)
@@ -84,6 +85,7 @@ DEFAULT_SWITCH_PRICE_THRESHOLD = 2.0  # CZK/kWh - threshold for turning on addit
 DEFAULT_CHARGING_STRATEGY = STRATEGY_DYNAMIC  # Default to dynamic optimization
 DEFAULT_LANGUAGE = "cs"  # Default to Czech
 DEFAULT_FULL_HOUR_CHARGING = True  # Default to full hour charging cycles
+DEFAULT_COST_OPTIMIZATION_MODE = "aggressive"  # aggressive, balanced, conservative
 
 # Language options
 LANGUAGE_CS = "cs"
