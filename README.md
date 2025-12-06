@@ -175,7 +175,7 @@ Karta je automaticky registrována po instalaci integrace.
 
 ## Senzory (v2.4.0)
 
-Integrace poskytuje **10 základních senzorů** a **1 switch**:
+Integrace poskytuje **11 entit celkem** - **10 senzorů** a **1 switch**:
 
 ### Hlavní senzory
 1. **`sensor.gw_smart_charging_forecast`** - Solární forecast s cenami elektřiny

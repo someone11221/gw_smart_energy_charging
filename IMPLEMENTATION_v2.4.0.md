@@ -140,10 +140,14 @@ def _calculate_cost_metrics(self, schedule, prices, battery_metrics):
     
     for slot_data in schedule[:current_slot + 1]:
         if "grid_charge" in slot_data.get("mode", ""):
-            charge_kwh = charge_kw * 0.25  # 15-min interval
-            cost = charge_kwh * price
-            total_grid_charge_kwh += charge_kwh
-            total_grid_charge_cost += cost
+            charge_kw = slot_data.get("planned_charge_kW", 0.0)
+            price = slot_data.get("price_czk_kwh", 0.0)
+            
+            if charge_kw > 0 and price > 0:
+                charge_kwh = charge_kw * 0.25  # 15-min interval
+                cost = charge_kwh * price
+                total_grid_charge_kwh += charge_kwh
+                total_grid_charge_cost += cost
     
     # Calculate savings
     avg_price = sum(valid_prices) / len(valid_prices)

@@ -334,6 +334,16 @@ class GWSmartDiagnosticsSensor(CoordinatorEntity, SensorEntity):
         
         # NEW v2.4.0: Get sensor status for better diagnostics
         sensor_status = data.get("sensor_status", {})
+        if not sensor_status:
+            # Fallback to empty dict if missing
+            sensor_status = {
+                "forecast_available": False,
+                "forecast_quality": "unknown",
+                "price_available": False,
+                "price_quality": "unknown",
+                "load_available": False,
+                "load_quality": "unknown",
+            }
         
         return {
             "last_update": data.get("last_update", "never"),
