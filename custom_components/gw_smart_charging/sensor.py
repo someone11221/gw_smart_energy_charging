@@ -332,6 +332,9 @@ class GWSmartDiagnosticsSensor(CoordinatorEntity, SensorEntity):
         battery_metrics = data.get("battery_metrics", {})
         grid_metrics = data.get("grid_metrics", {})
         
+        # NEW v2.4.0: Get sensor status for better diagnostics
+        sensor_status = data.get("sensor_status", {})
+        
         return {
             "last_update": data.get("last_update", "never"),
             "update_interval_minutes": 2,
@@ -353,6 +356,13 @@ class GWSmartDiagnosticsSensor(CoordinatorEntity, SensorEntity):
             "next_charge_price": next_charge_slot.get("price_czk_kwh", 0.0) if next_charge_slot else 0.0,
             "forecast_confidence": data.get("forecast_confidence", {}),
             "forecast_source": data.get("forecast_source", "unknown"),
+            # NEW v2.4.0: Sensor health status
+            "sensor_forecast_available": sensor_status.get("forecast_available", False),
+            "sensor_forecast_quality": sensor_status.get("forecast_quality", "unknown"),
+            "sensor_price_available": sensor_status.get("price_available", False),
+            "sensor_price_quality": sensor_status.get("price_quality", "unknown"),
+            "sensor_load_available": sensor_status.get("load_available", False),
+            "sensor_load_quality": sensor_status.get("load_quality", "unknown"),
             # Real-time battery metrics
             "battery_power_w": battery_metrics.get("battery_power_w", 0.0),
             "battery_power_kw": battery_metrics.get("battery_power_kw", 0.0),
