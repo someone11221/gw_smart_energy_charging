@@ -23,7 +23,7 @@ def get_device_info(entry: ConfigEntry) -> DeviceInfo:
         name=DEFAULT_NAME,
         manufacturer="Martin Rak",
         model="Smart Battery Charging Controller",
-        sw_version="2.3.0",
+        sw_version="2.4.0",
         configuration_url="https://github.com/someone11221/gw_smart_energy_charging",
     )
 
@@ -44,6 +44,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         # Automation support sensors
         GWSmartNextGridChargeSensor(coordinator, entry),  # Next grid charging period
         GWSmartActivityLogSensor(coordinator, entry),  # Activity log and state changes
+        # NEW v2.4.0: Cost optimization sensor
+        GWSmartCostOptimizationSensor(coordinator, entry),  # Cost tracking and optimization
     ]
 
     async_add_entities(entities, True)
@@ -330,6 +332,19 @@ class GWSmartDiagnosticsSensor(CoordinatorEntity, SensorEntity):
         battery_metrics = data.get("battery_metrics", {})
         grid_metrics = data.get("grid_metrics", {})
         
+        # NEW v2.4.0: Get sensor status for better diagnostics
+        sensor_status = data.get("sensor_status", {})
+        if not sensor_status:
+            # Fallback to empty dict if missing
+            sensor_status = {
+                "forecast_available": False,
+                "forecast_quality": "unknown",
+                "price_available": False,
+                "price_quality": "unknown",
+                "load_available": False,
+                "load_quality": "unknown",
+            }
+        
         return {
             "last_update": data.get("last_update", "never"),
             "update_interval_minutes": 2,
@@ -351,6 +366,13 @@ class GWSmartDiagnosticsSensor(CoordinatorEntity, SensorEntity):
             "next_charge_price": next_charge_slot.get("price_czk_kwh", 0.0) if next_charge_slot else 0.0,
             "forecast_confidence": data.get("forecast_confidence", {}),
             "forecast_source": data.get("forecast_source", "unknown"),
+            # NEW v2.4.0: Sensor health status
+            "sensor_forecast_available": sensor_status.get("forecast_available", False),
+            "sensor_forecast_quality": sensor_status.get("forecast_quality", "unknown"),
+            "sensor_price_available": sensor_status.get("price_available", False),
+            "sensor_price_quality": sensor_status.get("price_quality", "unknown"),
+            "sensor_load_available": sensor_status.get("load_available", False),
+            "sensor_load_quality": sensor_status.get("load_quality", "unknown"),
             # Real-time battery metrics
             "battery_power_w": battery_metrics.get("battery_power_w", 0.0),
             "battery_power_kw": battery_metrics.get("battery_power_kw", 0.0),
@@ -1051,3 +1073,117 @@ class GWSmartPredictionSensor(CoordinatorEntity, SensorEntity):
             "total_confidence": "high" if quality_score >= 70 else "medium" if quality_score >= 40 else "low",
         }
 
+
+
+class GWSmartCostOptimizationSensor(CoordinatorEntity, SensorEntity):
+    """Sensor showing cost optimization metrics and savings.
+    
+    NEW in v2.4.0 - Enhanced cost tracking and optimization insights.
+    """
+
+    def __init__(self, coordinator: GWSmartCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator)
+        self._entry = entry
+        self._attr_name = f"{DEFAULT_NAME} Cost Optimization"
+        self._attr_unique_id = f"{entry.entry_id}_cost_optimization"
+        self._attr_icon = "mdi:currency-usd"
+        self._attr_unit_of_measurement = "CZK"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device info."""
+        return get_device_info(self._entry)
+
+    @property
+    def native_value(self) -> float:
+        """Return total savings today in CZK."""
+        data = self.coordinator.data or {}
+        cost_metrics = data.get("cost_metrics", {})
+        return round(cost_metrics.get("daily_savings_czk", 0.0), 2)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return detailed cost optimization attributes."""
+        data = self.coordinator.data or {}
+        cost_metrics = data.get("cost_metrics", {})
+        schedule = data.get("schedule", [])
+        price_15min = data.get("price_15min", [])
+        
+        # Calculate price statistics
+        valid_prices = [p for p in price_15min if p > 0]
+        current_price = 0.0
+        if valid_prices:
+            now = datetime.now()
+            slot = now.hour * 4 + now.minute // 15
+            if 0 <= slot < len(price_15min):
+                current_price = price_15min[slot]
+        
+        min_price = min(valid_prices) if valid_prices else 0.0
+        max_price = max(valid_prices) if valid_prices else 0.0
+        avg_price = sum(valid_prices) / len(valid_prices) if valid_prices else 0.0
+        
+        # Calculate optimal charging window metrics
+        charging_slots = [s for s in schedule if s.get("should_charge", False)]
+        if charging_slots:
+            avg_charging_price = sum(s.get("price_czk_kwh", 0) for s in charging_slots) / len(charging_slots)
+            min_charging_price = min(s.get("price_czk_kwh", 0) for s in charging_slots)
+            max_charging_price = max(s.get("price_czk_kwh", 0) for s in charging_slots)
+        else:
+            avg_charging_price = 0.0
+            min_charging_price = 0.0
+            max_charging_price = 0.0
+        
+        # Calculate potential vs actual savings
+        potential_savings_pct = 0.0
+        if max_price > 0 and avg_charging_price > 0:
+            potential_savings_pct = ((max_price - avg_charging_price) / max_price) * 100.0
+        
+        # Price optimization score (0-100)
+        optimization_score = 0.0
+        if valid_prices and charging_slots:
+            # Score based on how close charging prices are to minimum prices
+            # Higher score = better optimization
+            price_range = max_price - min_price
+            if price_range > 0:
+                # How much better than average are we charging?
+                savings_vs_avg = avg_price - avg_charging_price
+                optimization_score = min(100.0, max(0.0, (savings_vs_avg / price_range) * 100.0))
+        
+        return {
+            # Cost metrics from coordinator
+            "daily_grid_charging_cost_czk": round(cost_metrics.get("daily_grid_charging_cost_czk", 0.0), 2),
+            "daily_savings_czk": round(cost_metrics.get("daily_savings_czk", 0.0), 2),
+            "daily_grid_charging_kwh": round(cost_metrics.get("daily_grid_charging_kwh", 0.0), 3),
+            "monthly_savings_estimate_czk": round(cost_metrics.get("daily_savings_czk", 0.0) * 30, 2),
+            "yearly_savings_estimate_czk": round(cost_metrics.get("daily_savings_czk", 0.0) * 365, 2),
+            
+            # Price statistics
+            "current_price_czk_kwh": round(current_price, 4),
+            "min_price_today_czk_kwh": round(min_price, 4),
+            "max_price_today_czk_kwh": round(max_price, 4),
+            "avg_price_today_czk_kwh": round(avg_price, 4),
+            "price_volatility_pct": round(((max_price - min_price) / avg_price * 100) if avg_price > 0 else 0.0, 1),
+            
+            # Charging optimization metrics
+            "planned_charging_slots": len(charging_slots),
+            "avg_charging_price_czk_kwh": round(avg_charging_price, 4),
+            "min_charging_price_czk_kwh": round(min_charging_price, 4),
+            "max_charging_price_czk_kwh": round(max_charging_price, 4),
+            "potential_savings_pct": round(potential_savings_pct, 1),
+            "optimization_score": round(optimization_score, 1),
+            "optimization_quality": (
+                "excellent" if optimization_score >= 80 else
+                "good" if optimization_score >= 60 else
+                "fair" if optimization_score >= 40 else
+                "poor" if optimization_score >= 20 else
+                "very_poor"
+            ),
+            
+            # Cost comparison
+            "cost_vs_peak_price_pct": round(((current_price - max_price) / max_price * 100) if max_price > 0 else 0.0, 1),
+            "cost_vs_average_price_pct": round(((current_price - avg_price) / avg_price * 100) if avg_price > 0 else 0.0, 1),
+            
+            # Strategy info
+            "active_strategy": cost_metrics.get("active_strategy", "unknown"),
+            "cost_optimization_mode": cost_metrics.get("cost_optimization_mode", "balanced"),
+        }

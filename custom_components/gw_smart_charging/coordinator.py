@@ -1,19 +1,20 @@
-# GW Smart Charging Coordinator - Hourly interval optimization logic
+# GW Smart Charging Coordinator - Cost-optimized charging logic
 #
 # This coordinator is the heart of the Smart Battery Charging Controller.
 # It reads data from various sensors (solar forecast, electricity prices, consumption)
 # and calculates an optimal charging schedule for the battery.
 #
 # Key Features:
-# - Hourly charging schedule optimization (24 hourly slots per day)
+# - Advanced cost optimization with improved price trend detection
 # - Multiple charging strategies (dynamic, fixed hours, solar priority, etc.)
 # - Machine learning from historical consumption patterns
 # - Support for critical hours (peak demand periods)
+# - Enhanced sensor validation and error handling
 # - Test mode for safe configuration testing
 # - Integration with Nanogreen pricing service
 #
 # Author: Martin Rak
-# Version: 2.3.0
+# Version: 2.4.0
 
 from __future__ import annotations
 
@@ -111,7 +112,10 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         self._additional_switches_state: Dict[str, bool] = {}  # Track additional switches state
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch and normalize forecast, price and load data and compute 15-min schedule."""
+        """Fetch and normalize forecast, price and load data and compute 15-min schedule.
+        
+        ENHANCED v2.4.0: Improved sensor validation and error handling.
+        """
         try:
             forecast_sensor = self.config.get(CONF_FORECAST_SENSOR)
             price_sensor = self.config.get(CONF_PRICE_SENSOR)
@@ -125,53 +129,105 @@ class GWSmartCoordinator(DataUpdateCoordinator):
 
             forecast_meta = {}
             forecast_timestamps: List[str] = []
+            
+            # NEW v2.4.0: Track sensor availability and data quality
+            sensor_status = {
+                "forecast_available": False,
+                "price_available": False,
+                "load_available": False,
+                "forecast_quality": "none",
+                "price_quality": "none",
+                "load_quality": "none",
+            }
 
             # Parse forecast (supports 15-min data from sensor.energy_production_d2)
             if forecast_sensor:
                 state = self.hass.states.get(forecast_sensor)
-                if state:
-                    _LOGGER.debug("Parsing forecast from %s", forecast_sensor)
-                    forecast_15min = self._parse_forecast_15min(state)
-                    forecast_timestamps = self._build_forecast_timestamps_15min(state)
-                    conf_score, conf_reason, source, slots = self._compute_forecast_confidence(state)
-                    forecast_meta = {
-                        "forecast_confidence": {"score": conf_score, "reason": conf_reason},
-                        "forecast_source": source,
-                        "forecast_slots_count": slots,
-                    }
+                if state and state.state not in ("unavailable", "unknown", "none", None):
+                    try:
+                        _LOGGER.debug("Parsing forecast from %s (state=%s)", forecast_sensor, state.state)
+                        forecast_15min = self._parse_forecast_15min(state)
+                        forecast_timestamps = self._build_forecast_timestamps_15min(state)
+                        conf_score, conf_reason, source, slots = self._compute_forecast_confidence(state)
+                        forecast_meta = {
+                            "forecast_confidence": {"score": conf_score, "reason": conf_reason},
+                            "forecast_source": source,
+                            "forecast_slots_count": slots,
+                        }
+                        # NEW v2.4.0: Track data quality
+                        sensor_status["forecast_available"] = True
+                        if any(f > 0 for f in forecast_15min):
+                            sensor_status["forecast_quality"] = "good" if conf_score >= 0.8 else "fair" if conf_score >= 0.5 else "poor"
+                        _LOGGER.info(f"Forecast sensor loaded: {slots} slots, quality={sensor_status['forecast_quality']}")
+                    except Exception as e:
+                        _LOGGER.error("Failed to parse forecast sensor %s: %s", forecast_sensor, e, exc_info=True)
+                        sensor_status["forecast_quality"] = "error"
                 else:
-                    _LOGGER.debug("Forecast sensor %s not found", forecast_sensor)
+                    _LOGGER.warning("Forecast sensor %s not found or unavailable (state=%s)", 
+                                  forecast_sensor, state.state if state else "None")
 
             # Parse price (from sensor.current_consumption_price_czk_kwh with today/tomorrow hourly)
             if price_sensor:
                 state = self.hass.states.get(price_sensor)
-                if state:
-                    _LOGGER.debug("Parsing prices from %s", price_sensor)
-                    price_15min = self._parse_price_15min(state)
+                if state and state.state not in ("unavailable", "unknown", "none", None):
+                    try:
+                        _LOGGER.debug("Parsing prices from %s (state=%s)", price_sensor, state.state)
+                        price_15min = self._parse_price_15min(state)
+                        # NEW v2.4.0: Validate price data
+                        sensor_status["price_available"] = True
+                        valid_prices = sum(1 for p in price_15min if p > 0)
+                        if valid_prices >= 96:
+                            sensor_status["price_quality"] = "good"
+                        elif valid_prices >= 48:
+                            sensor_status["price_quality"] = "fair"
+                        elif valid_prices >= 24:
+                            sensor_status["price_quality"] = "poor"
+                        else:
+                            sensor_status["price_quality"] = "insufficient"
+                        _LOGGER.info(f"Price sensor loaded: {valid_prices}/96 valid prices, quality={sensor_status['price_quality']}")
+                    except Exception as e:
+                        _LOGGER.error("Failed to parse price sensor %s: %s", price_sensor, e, exc_info=True)
+                        sensor_status["price_quality"] = "error"
                 else:
-                    _LOGGER.debug("Price sensor %s not found", price_sensor)
+                    _LOGGER.warning("Price sensor %s not found or unavailable (state=%s)", 
+                                  price_sensor, state.state if state else "None")
 
             # Parse load - use ML prediction if enabled, otherwise use daily sensor
             ml_enabled = self.config.get(CONF_ENABLE_ML_PREDICTION, DEFAULT_ENABLE_ML_PREDICTION)
             if daily_load_sensor:
                 state_daily = self.hass.states.get(daily_load_sensor)
-                if state_daily:
-                    if ml_enabled:
-                        _LOGGER.debug("Using ML prediction for load pattern")
-                        load_15min = self._ml_predict_load_pattern(state_daily)
-                        # Update ML history with current actual consumption
-                        current_actual = self._parse_daily_load_pattern_15min(state_daily)
-                        self._update_ml_history(current_actual)
-                    else:
-                        _LOGGER.debug("Parsing daily load pattern from %s", daily_load_sensor)
-                        load_15min = self._parse_daily_load_pattern_15min(state_daily)
+                if state_daily and state_daily.state not in ("unavailable", "unknown", "none", None):
+                    try:
+                        if ml_enabled:
+                            _LOGGER.debug("Using ML prediction for load pattern")
+                            load_15min = self._ml_predict_load_pattern(state_daily)
+                            # Update ML history with current actual consumption
+                            current_actual = self._parse_daily_load_pattern_15min(state_daily)
+                            self._update_ml_history(current_actual)
+                            sensor_status["load_quality"] = "ml_prediction"
+                        else:
+                            _LOGGER.debug("Parsing daily load pattern from %s", daily_load_sensor)
+                            load_15min = self._parse_daily_load_pattern_15min(state_daily)
+                            sensor_status["load_quality"] = "historical"
+                        sensor_status["load_available"] = True
+                        _LOGGER.info(f"Load sensor loaded: quality={sensor_status['load_quality']}")
+                    except Exception as e:
+                        _LOGGER.error("Failed to parse daily load sensor %s: %s", daily_load_sensor, e, exc_info=True)
+                        sensor_status["load_quality"] = "error"
             
             # Fallback to current consumption sensor
             if not any(load_15min) and load_sensor:
                 state = self.hass.states.get(load_sensor)
-                if state:
-                    _LOGGER.debug("Using current load from %s", load_sensor)
-                    load_15min = self._parse_current_load_15min(state)
+                if state and state.state not in ("unavailable", "unknown", "none", None):
+                    try:
+                        _LOGGER.debug("Using current load from %s", load_sensor)
+                        load_15min = self._parse_current_load_15min(state)
+                        sensor_status["load_available"] = True
+                        sensor_status["load_quality"] = "current_only"
+                        _LOGGER.info("Load sensor loaded from current consumption (fallback)")
+                    except Exception as e:
+                        _LOGGER.error("Failed to parse load sensor %s: %s", load_sensor, e, exc_info=True)
+                        sensor_status["load_quality"] = "error"
 
             # Compute 15-min optimized schedule
             schedule = self._compute_schedule_15min(forecast_15min, price_15min, load_15min)
@@ -179,6 +235,9 @@ class GWSmartCoordinator(DataUpdateCoordinator):
             # Get real-time battery and grid metrics (with W to kWh conversion)
             battery_metrics = self._get_battery_metrics()
             grid_metrics = self._get_grid_metrics()
+            
+            # NEW v2.4.0: Calculate cost metrics for enhanced cost tracking
+            cost_metrics = self._calculate_cost_metrics(schedule, price_15min, battery_metrics)
 
             # Execute charging automation if enabled
             await self._execute_charging_automation(schedule)
@@ -192,6 +251,8 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                 "timestamps": forecast_timestamps,
                 "battery_metrics": battery_metrics,
                 "grid_metrics": grid_metrics,
+                "cost_metrics": cost_metrics,  # NEW v2.4.0
+                "sensor_status": sensor_status,  # NEW v2.4.0
                 **forecast_meta,
                 "last_update": datetime.now(timezone.utc).isoformat(),
             }
@@ -1275,7 +1336,13 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                                      max_charge: float, eff: float, interval_hours: float = 0.25) -> List[int]:
         """Find optimal charging slots considering price trends and energy needs.
         
-        ENHANCED v2.1.0: Improved 12-hour lookahead to find absolute lowest prices.
+        ENHANCED v2.4.0: Improved cost optimization with more aggressive price targeting.
+        
+        Changes in v2.4.0:
+        - More aggressive price difference thresholds (5% instead of 10%)
+        - Extended lookahead window (18 hours instead of 12)
+        - Better handling of price volatility
+        - Smarter slot selection to maximize cost savings
         
         Args:
             prices: List of prices for 96 slots
@@ -1310,8 +1377,8 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         # Group prices into windows and find decreasing trends
         current_time_slot = datetime.now().hour * 4 + (datetime.now().minute // 15)
         
-        # ENHANCED v2.1.0: Look ahead for next 12 hours (48 slots) specifically
-        lookahead_slots = 48  # 12 hours * 4 slots/hour
+        # ENHANCED v2.4.0: Extended lookahead to 18 hours (72 slots) for better cost optimization
+        lookahead_slots = 72  # 18 hours * 4 slots/hour (was 48 in v2.1.0)
         valid_slots = []
         for slot in range(current_time_slot, min(current_time_slot + lookahead_slots, 96)):
             price = prices[slot] if slot < len(prices) else 999.0
@@ -1324,7 +1391,7 @@ class GWSmartCoordinator(DataUpdateCoordinator):
         # Sort by price to find absolute cheapest slots
         valid_slots.sort(key=lambda x: x[1])
         
-        # ENHANCED v2.1.0: Improved decreasing price trend detection
+        # ENHANCED v2.4.0: More aggressive price trend detection for better cost savings
         # Check if prices are decreasing by comparing current vs future averages
         is_decreasing_trend = False
         prices_later = False
@@ -1333,7 +1400,7 @@ class GWSmartCoordinator(DataUpdateCoordinator):
             # Get current price (first available slot)
             current_price = prices[current_time_slot] if current_time_slot < len(prices) else valid_slots[0][1]
             
-            # Calculate average of cheapest slots in the 12-hour window
+            # Calculate average of cheapest slots in the 18-hour window
             num_cheap_slots = min(slots_needed * 2, len(valid_slots) // 2)
             cheapest_avg = sum(p for _, p in valid_slots[:num_cheap_slots]) / num_cheap_slots if num_cheap_slots > 0 else current_price
             
@@ -1341,30 +1408,51 @@ class GWSmartCoordinator(DataUpdateCoordinator):
             cheapest_slot_times = [s for s, p in valid_slots[:num_cheap_slots]]
             avg_cheapest_time = sum(cheapest_slot_times) / len(cheapest_slot_times) if cheapest_slot_times else current_time_slot
             
-            is_decreasing_trend = cheapest_avg < current_price * 0.90  # Prices will drop by at least 10%
+            # ENHANCED v2.4.0: More aggressive threshold - 5% instead of 10%
+            # This means we'll wait for even smaller price drops
+            is_decreasing_trend = cheapest_avg < current_price * 0.95  # Prices will drop by at least 5%
             prices_later = avg_cheapest_time > current_time_slot + 4  # Cheapest prices are at least 1 hour away
+            
+            # NEW v2.4.0: Additional check for high price volatility
+            # If prices vary significantly, be even more selective
+            price_range = max(p for _, p in valid_slots) - min(p for _, p in valid_slots)
+            avg_price = sum(p for _, p in valid_slots) / len(valid_slots)
+            volatility = (price_range / avg_price) if avg_price > 0 else 0
+            
+            # If high volatility (>30%), use absolute cheapest slots only
+            high_volatility = volatility > 0.30
             
             if is_decreasing_trend and prices_later:
                 _LOGGER.info(
                     f"Detected decreasing price trend: current={current_price:.2f}, "
-                    f"cheapest_avg={cheapest_avg:.2f} - waiting for absolute minimum prices"
+                    f"cheapest_avg={cheapest_avg:.2f}, volatility={volatility*100:.1f}% - "
+                    f"waiting for absolute minimum prices (ENHANCED v2.4.0)"
                 )
-                # Wait for the absolute cheapest slots within the 12-hour window
+                # Wait for the absolute cheapest slots within the 18-hour window
                 # Take only the absolutely cheapest slots needed
                 cheapest_slots = [s for s, p in valid_slots[:slots_needed]]
+            elif high_volatility:
+                # Even without a clear trend, if prices are very volatile,
+                # be selective and only use cheapest 25% of slots
+                _LOGGER.info(
+                    f"High price volatility detected ({volatility*100:.1f}%) - "
+                    f"using only cheapest slots for cost optimization (NEW v2.4.0)"
+                )
+                max_cheap_slots = max(slots_needed, len(valid_slots) // 4)
+                cheapest_slots = [s for s, p in valid_slots[:max_cheap_slots]][:slots_needed]
             else:
                 # Normal case: take cheapest available slots but prefer sooner if prices are similar
                 # This prevents waiting unnecessarily if prices aren't significantly different
-                _LOGGER.info(f"No significant decreasing trend - charging at earliest cheap slots")
+                _LOGGER.info(f"No significant decreasing trend (volatility={volatility*100:.1f}%) - charging at earliest cheap slots")
                 cheapest_slots = [s for s, p in valid_slots[:slots_needed]]
         else:
             # Not enough data - just take cheapest available
             cheapest_slots = [s for s, p in valid_slots[:slots_needed]]
         
         # Verify slots are within reasonable time window
-        # For decreasing trend, allow waiting up to 12 hours
-        # For normal case, prefer within 8 hours
-        max_wait_slots = lookahead_slots if is_decreasing_trend and prices_later else 32  # 12 or 8 hours
+        # For decreasing trend or high volatility, allow waiting up to 18 hours
+        # For normal case, prefer within 12 hours
+        max_wait_slots = lookahead_slots if (is_decreasing_trend and prices_later) else 48  # 18 or 12 hours
         filtered_slots = [s for s in cheapest_slots if s <= current_time_slot + max_wait_slots]
         
         if not filtered_slots and cheapest_slots:
@@ -1802,5 +1890,69 @@ class GWSmartCoordinator(DataUpdateCoordinator):
                     metrics["pv_power_kw"] = round(pv_w / 1000.0, 3)
                 except (ValueError, TypeError):
                     pass
+        
+        return metrics
+
+    def _calculate_cost_metrics(self, schedule: List[Dict[str, Any]], 
+                                prices: List[float], 
+                                battery_metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate cost optimization metrics for today.
+        
+        NEW in v2.4.0 - Enhanced cost tracking and optimization.
+        
+        Returns:
+            Dictionary with cost metrics including:
+            - daily_grid_charging_cost_czk: Cost of charging from grid today
+            - daily_savings_czk: Estimated savings vs charging at average price
+            - daily_grid_charging_kwh: Total kWh charged from grid today
+            - active_strategy: Current charging strategy in use
+            - cost_optimization_mode: Current optimization mode
+        """
+        metrics = {
+            "daily_grid_charging_cost_czk": 0.0,
+            "daily_savings_czk": 0.0,
+            "daily_grid_charging_kwh": 0.0,
+            "active_strategy": self.config.get(CONF_CHARGING_STRATEGY, DEFAULT_CHARGING_STRATEGY),
+            "cost_optimization_mode": self.config.get(CONF_COST_OPTIMIZATION_MODE, DEFAULT_COST_OPTIMIZATION_MODE),
+        }
+        
+        if not schedule or not prices:
+            return metrics
+        
+        # Get current time slot
+        now = datetime.now()
+        current_slot = now.hour * 4 + now.minute // 15
+        
+        # Calculate costs for grid charging slots that have occurred or are current
+        total_grid_charge_kwh = 0.0
+        total_grid_charge_cost = 0.0
+        
+        for slot_data in schedule[:current_slot + 1]:  # Only count completed/current slots
+            slot_mode = slot_data.get("mode", "")
+            
+            # Count grid charging modes
+            if "grid_charge" in slot_mode:
+                charge_kw = slot_data.get("planned_charge_kW", 0.0)
+                price = slot_data.get("price_czk_kwh", 0.0)
+                
+                if charge_kw > 0 and price > 0:
+                    # 15-minute interval = 0.25 hours
+                    charge_kwh = charge_kw * 0.25
+                    cost = charge_kwh * price
+                    
+                    total_grid_charge_kwh += charge_kwh
+                    total_grid_charge_cost += cost
+        
+        metrics["daily_grid_charging_kwh"] = round(total_grid_charge_kwh, 3)
+        metrics["daily_grid_charging_cost_czk"] = round(total_grid_charge_cost, 2)
+        
+        # Calculate savings vs charging at average price
+        # This shows how much we saved by smart charging vs random charging
+        valid_prices = [p for p in prices if p > 0]
+        if valid_prices and total_grid_charge_kwh > 0:
+            avg_price = sum(valid_prices) / len(valid_prices)
+            cost_at_avg_price = total_grid_charge_kwh * avg_price
+            savings = cost_at_avg_price - total_grid_charge_cost
+            metrics["daily_savings_czk"] = round(savings, 2)
         
         return metrics

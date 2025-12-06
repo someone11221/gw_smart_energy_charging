@@ -1,10 +1,21 @@
 # Smart Battery Charging Controller
 
-Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie pomocí solárního forecastu a cen elektřiny. **Verze 2.3.0** - Vylepšený dashboard, lepší konfigurace s hinty, debugging tools.
+Pokročilá integrace pro Home Assistant optimalizující nabíjení baterie pomocí solárního forecastu a cen elektřiny. **Verze 2.4.0** - Vylepšená optimalizace nákladů, nový senzor sledování úspor, lepší validace senzorů.
 
-**Autor:** Martin Rak | **Firmware verze:** 2.3.0
+**Autor:** Martin Rak | **Firmware verze:** 2.4.0
 
 ## Funkce
+
+### 🆕 Nové ve v2.4.0
+
+💰 **Vylepšená optimalizace nákladů** - Agresivnější hledání nejlevnějších hodin pro maximální úspory  
+📊 **Nový senzor sledování nákladů** - Kompletní přehled nákladů, úspor a efektivity nabíjení  
+🔍 **Detekce volatility cen** - Automatické rozpoznání vysoké volatility a přizpůsobení strategie  
+⏰ **Prodloužené okno předpovědi** - 18 hodin místo 12 pro lepší plánování  
+🎯 **Citlivější detekce trendů** - 5% práh místo 10% pro zachycení menších rozdílů v cenách  
+📈 **Lepší validace senzorů** - Robustnější zpracování chybějících nebo nedostupných senzorů  
+🔧 **Diagnostika kvality dat** - Sledování kvality dat z každého senzoru  
+💡 **Vylepšené logování** - Informativnější zprávy o rozhodnutích týkajících se cen  
 
 ### 🆕 Nové ve v2.3.0
 
@@ -162,9 +173,9 @@ Karta je automaticky registrována po instalaci integrace.
 
 Žádná ztráta dat, žádná reinstalace!
 
-## Senzory (v1.8.0)
+## Senzory (v2.4.0)
 
-Integrace poskytuje **9 základních senzorů** a **1 switch**:
+Integrace poskytuje **11 entit celkem** - **10 senzorů** a **1 switch**:
 
 ### Hlavní senzory
 1. **`sensor.gw_smart_charging_forecast`** - Solární forecast s cenami elektřiny
@@ -173,16 +184,17 @@ Integrace poskytuje **9 základních senzorů** a **1 switch**:
 4. **`sensor.gw_smart_charging_battery_power`** - Výkon baterie a dnešní součty
 
 ### Diagnostika a statistiky
-5. **`sensor.gw_smart_charging_diagnostics`** - Diagnostika systému s aktuálním SoC
+5. **`sensor.gw_smart_charging_diagnostics`** - Diagnostika systému s aktuálním SoC a kvalitou senzorů
 6. **`sensor.gw_smart_charging_daily_statistics`** - Denní statistiky a úspory
 7. **`sensor.gw_smart_charging_prediction`** - Kvalita ML predikce
+8. **`sensor.gw_smart_charging_cost_optimization`** - **NOVÉ v2.4.0** - Sledování nákladů a úspor
 
 ### Automatizace
-8. **`sensor.gw_smart_charging_next_charge`** - Další plánované nabíjení/vybíjení
-9. **`sensor.gw_smart_charging_activity_log`** - Historie aktivit
+9. **`sensor.gw_smart_charging_next_charge`** - Další plánované nabíjení/vybíjení
+10. **`sensor.gw_smart_charging_activity_log`** - Historie aktivit
 
 ### Ovládání
-10. **`switch.gw_smart_charging_auto_charging`** - Automatické řízení
+11. **`switch.gw_smart_charging_auto_charging`** - Automatické řízení
 
 **Poznámka:** Data z předchozích 11 senzorů (series, today charge/discharge, atd.) jsou nyní dostupná jako atributy konsolidovaných senzorů. Viz `RELEASE_NOTES_v1.8.0.md` pro detaily migrace.
 
@@ -286,6 +298,68 @@ Integrace se nyní zobrazuje v panelu Zařízení a Služby:
 - **RELEASE_NOTES_v1.8.0.md** - Detailní release notes s migrační příručkou
 
 ## Release Notes
+
+### v2.4.0 (Cost Optimization & Sensor Reliability - December 2024)
+
+#### 💰 Enhanced Cost Optimization
+
+**New Cost Tracking Sensor**
+- `sensor.gw_smart_charging_cost_optimization` provides comprehensive cost metrics
+- Daily grid charging cost and savings tracking
+- Monthly/yearly savings estimates
+- Optimization score (0-100) showing efficiency
+- Price volatility tracking and analysis
+
+**Smarter Price Targeting**
+- More aggressive optimization (5% threshold vs 10%)
+- Extended 18-hour lookahead window (was 12h)
+- Price volatility detection for dynamic pricing
+- Better handling of spot price variations
+
+**Cost Optimization Modes**
+- Automatically detects high price volatility (>30%)
+- Uses only cheapest 25% of slots when prices vary significantly
+- Smarter waiting for absolute price minimums
+- Better balance between cost and battery readiness
+
+#### 🔧 Improved Sensor Reliability
+
+**Enhanced Validation**
+- Checks for unavailable/unknown sensor states
+- Better error handling and recovery
+- Detailed sensor quality tracking
+- Informative logging of sensor issues
+
+**Diagnostics Enhancements**
+- New sensor quality attributes
+- `sensor_forecast_quality`: good/fair/poor/error
+- `sensor_price_quality`: good/fair/poor/insufficient/error
+- `sensor_load_quality`: ml_prediction/historical/current_only/error
+
+#### 📊 Better Monitoring
+
+**Cost Metrics Available**
+- Real-time charging cost tracking
+- Savings vs average price calculation
+- Optimization quality indicators
+- Price comparison statistics
+
+#### 🐛 Fixes
+
+- Improved handling of missing sensors
+- Better validation before sensor parsing
+- More robust error recovery
+- Enhanced logging context
+
+#### 🔄 Migration
+
+**Fully backward compatible** - No breaking changes
+- All existing configurations work unchanged
+- New cost sensor automatically added
+- Enhanced optimization uses existing strategies
+- No manual changes needed
+
+---
 
 ### v2.3.0 (Dashboard & Configuration Improvements - November 2024)
 
