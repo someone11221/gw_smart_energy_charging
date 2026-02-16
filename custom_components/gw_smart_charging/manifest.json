@@ -1,0 +1,17 @@
+{
+  "domain": "gw_smart_charging",
+  "name": "Smart Battery Charging Controller",
+  "version": "3.0.1",
+  "documentation": "https://github.com/someone11221/gw_smart_energy_charging",
+  "issue_tracker": "https://github.com/someone11221/gw_smart_energy_charging/issues",
+  "codeowners": ["@someone11221"],
+  "config_flow": true,
+  "dependencies": [],
+  "requirements": [
+    "numpy>=1.21.0",
+    "scikit-learn>=1.0.0",
+    "aiohttp>=3.8.0"
+  ],
+  "iot_class": "local_polling",
+  "after_dependencies": ["recorder", "history"]
+}

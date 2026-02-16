@@ -1,0 +1,104 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Zdroj spotových cen",
+        "description": "Vyberte poskytovatele spotových cen elektřiny",
+        "data": {
+          "price_provider": "Poskytovatel cen",
+          "price_sensor": "Sensor s cenami elektřiny"
+        }
+      },
+      "battery": {
+        "title": "Konfigurace bateriového systému",
+        "description": "Nastavte váš bateriový systém a řídicí skripty",
+        "data": {
+          "battery_type": "Typ baterie",
+          "soc_sensor": "Sensor SOC (stav nabití)",
+          "battery_power_sensor": "Sensor výkonu baterie",
+          "battery_capacity": "Kapacita baterie (kWh)",
+          "charging_script_on": "Script pro zapnutí nabíjení",
+          "charging_script_off": "Script pro vypnutí nabíjení"
+        }
+      },
+      "strategy": {
+        "title": "Parametry nabíjecí strategie",
+        "description": "Nastavte chování inteligentní nabíjecí logiky",
+        "data": {
+          "min_soc_before_peak": "Min SOC před peakem (%)",
+          "target_soc_full": "Cílové SOC při plném nabití (%)",
+          "min_soc_safety": "Bezpečnostní minimum SOC (%)",
+          "charging_power": "Nabíjecí výkon (kW)",
+          "auto_charging": "Automatické nabíjení zapnuto"
+        },
+        "data_description": {
+          "min_soc_before_peak": "Minimální úroveň nabití baterie před drahými hodinami (doporučeno 80%)",
+          "target_soc_full": "Úroveň plného nabití při velmi levných cenách (doporučeno 95%)",
+          "min_soc_safety": "SOC nikdy neklesne pod tuto hodnotu (doporučeno 20%)",
+          "charging_power": "Maximální nabíjecí výkon vašeho systému v kW",
+          "auto_charging": "Povolit automatické řízení nabíjení podle optimálního plánu"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nelze se připojit k Home Assistant",
+      "invalid_auth": "Neplatné ověření",
+      "unknown": "Neočekávaná chyba"
+    },
+    "abort": {
+      "already_configured": "Zařízení je již nakonfigurováno"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Upravit nastavení nabíjení",
+        "description": "Změňte parametry nabíjecí strategie",
+        "data": {
+          "min_soc_before_peak": "Min SOC před peakem (%)",
+          "target_soc_full": "Cílové SOC při plném nabití (%)",
+          "min_soc_safety": "Bezpečnostní minimum SOC (%)",
+          "charging_power": "Nabíjecí výkon (kW)",
+          "auto_charging": "Automatické nabíjení"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery_status": {
+        "name": "Stav baterie"
+      },
+      "charging_plan": {
+        "name": "Nabíjecí plán"
+      },
+      "price_forecast": {
+        "name": "Předpověď cen"
+      },
+      "next_charging": {
+        "name": "Další nabíjení"
+      },
+      "statistics": {
+        "name": "Statistiky"
+      },
+      "diagnostics": {
+        "name": "Diagnostika"
+      }
+    },
+    "switch": {
+      "auto_charging": {
+        "name": "Automatické nabíjení"
+      }
+    }
+  },
+  "services": {
+    "force_plan_update": {
+      "name": "Vynutit aktualizaci plánu",
+      "description": "Vynutí přepočet nabíjecího plánu"
+    },
+    "get_charging_schedule": {
+      "name": "Získat nabíjecí plán",
+      "description": "Vrátí kompletní nabíjecí plán pro použití v automatizacích"
+    }
+  }
+}

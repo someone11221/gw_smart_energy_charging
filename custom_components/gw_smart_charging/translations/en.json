@@ -1,0 +1,104 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Electricity Price Source",
+        "description": "Select your electricity spot price provider",
+        "data": {
+          "price_provider": "Price Provider",
+          "price_sensor": "Electricity price sensor"
+        }
+      },
+      "battery": {
+        "title": "Battery System Configuration",
+        "description": "Configure your battery system and control scripts",
+        "data": {
+          "battery_type": "Battery Type",
+          "soc_sensor": "SOC (State of Charge) Sensor",
+          "battery_power_sensor": "Battery Power Sensor",
+          "battery_capacity": "Battery Capacity (kWh)",
+          "charging_script_on": "Charging Start Script",
+          "charging_script_off": "Charging Stop Script"
+        }
+      },
+      "strategy": {
+        "title": "Charging Strategy Parameters",
+        "description": "Configure intelligent charging behavior",
+        "data": {
+          "min_soc_before_peak": "Min SOC Before Peak (%)",
+          "target_soc_full": "Target SOC for Full Charge (%)",
+          "min_soc_safety": "Safety Minimum SOC (%)",
+          "charging_power": "Charging Power (kW)",
+          "auto_charging": "Auto Charging Enabled"
+        },
+        "data_description": {
+          "min_soc_before_peak": "Minimum battery level before expensive hours (recommended 80%)",
+          "target_soc_full": "Full charge level during very cheap prices (recommended 95%)",
+          "min_soc_safety": "SOC will never drop below this value (recommended 20%)",
+          "charging_power": "Maximum charging power of your system in kW",
+          "auto_charging": "Enable automatic charging control based on optimal plan"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to Home Assistant",
+      "invalid_auth": "Invalid authentication",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "Device is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Edit Charging Settings",
+        "description": "Change charging strategy parameters",
+        "data": {
+          "min_soc_before_peak": "Min SOC Before Peak (%)",
+          "target_soc_full": "Target SOC for Full Charge (%)",
+          "min_soc_safety": "Safety Minimum SOC (%)",
+          "charging_power": "Charging Power (kW)",
+          "auto_charging": "Auto Charging"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery_status": {
+        "name": "Battery Status"
+      },
+      "charging_plan": {
+        "name": "Charging Plan"
+      },
+      "price_forecast": {
+        "name": "Price Forecast"
+      },
+      "next_charging": {
+        "name": "Next Charging"
+      },
+      "statistics": {
+        "name": "Statistics"
+      },
+      "diagnostics": {
+        "name": "Diagnostics"
+      }
+    },
+    "switch": {
+      "auto_charging": {
+        "name": "Auto Charging"
+      }
+    }
+  },
+  "services": {
+    "force_plan_update": {
+      "name": "Force Plan Update",
+      "description": "Forces recalculation of charging plan"
+    },
+    "get_charging_schedule": {
+      "name": "Get Charging Schedule",
+      "description": "Returns complete charging plan for use in automations"
+    }
+  }
+}

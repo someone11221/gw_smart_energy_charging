@@ -1,0 +1,7 @@
+{
+  "name": "Smart Battery Charging Controller",
+  "render_readme": true,
+  "domains": ["sensor", "switch"],
+  "iot_class": "Local Polling",
+  "version": "3.0.1"
+}

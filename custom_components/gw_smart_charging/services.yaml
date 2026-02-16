@@ -1,0 +1,27 @@
+force_plan_update:
+  name: Force Plan Update
+  description: Forces immediate recalculation of the charging plan
+  fields: {}
+
+get_charging_schedule:
+  name: Get Charging Schedule
+  description: Returns complete charging plan with slots and predicted peaks
+  fields: {}
+  response:
+    type: object
+    properties:
+      slots:
+        type: array
+        description: List of planned charging slots
+      predicted_peaks:
+        type: array
+        description: List of predicted price peaks
+      total_cost:
+        type: float
+        description: Total estimated cost in CZK
+      total_kwh:
+        type: float
+        description: Total energy to be charged in kWh
+      confidence:
+        type: float
+        description: Confidence score (0-1)
