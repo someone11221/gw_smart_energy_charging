@@ -1,0 +1,74 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Price Provider",
+        "data": {
+          "price_provider": "Electricity price provider",
+          "price_sensor": "Current price sensor (entity_id)"
+        }
+      },
+      "distribution": {
+        "title": "Distribution & HDO",
+        "description": "Set your electricity distributor, tariff and HDO sensor for real-time NT/VT detection.",
+        "data": {
+          "distributor": "Distributor",
+          "tariff": "Distribution tariff",
+          "circuit_breaker": "Circuit breaker",
+          "hdo_sensor": "HDO sensor (on=NT low tariff)"
+        }
+      },
+      "battery": {
+        "title": "Battery & Consumption",
+        "description": "Adaptive mode learns from history. Energy Dashboard entity provides the best data.",
+        "data": {
+          "battery_type": "Inverter/battery type",
+          "soc_sensor": "SOC sensor (entity_id)",
+          "battery_power_sensor": "Battery power sensor (W)",
+          "battery_capacity": "Battery capacity (kWh)",
+          "charging_script_on": "Charging ON script",
+          "charging_script_off": "Charging OFF script",
+          "consumption_sensor": "Consumption sensor (optional)",
+          "energy_dashboard_entity": "HA Energy Dashboard entity (optional, auto-detect)",
+          "prediction_mode": "Consumption prediction mode"
+        }
+      },
+      "strategy": {
+        "title": "Charging Strategy",
+        "data": {
+          "min_soc_before_peak": "Min SOC before price peak (%)",
+          "target_soc_full": "Target SOC (%)",
+          "min_soc_safety": "Safety minimum SOC (%)",
+          "charging_power": "Charging power (kW)",
+          "auto_charging": "Enable auto charging"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Smart Charging Settings",
+        "data": {
+          "distributor": "Distributor",
+          "tariff": "Distribution tariff",
+          "circuit_breaker": "Circuit breaker",
+          "hdo_sensor": "HDO sensor (on=NT)",
+          "prediction_mode": "Prediction mode (fixed/adaptive)",
+          "min_soc_before_peak": "Min SOC before peak (%)",
+          "target_soc_full": "Target SOC (%)",
+          "charging_power": "Charging power (kW)",
+          "soc_sensor": "SOC sensor",
+          "battery_power_sensor": "Battery power sensor",
+          "price_sensor": "Price sensor",
+          "charging_script_on": "Charging ON script",
+          "charging_script_off": "Charging OFF script",
+          "consumption_sensor": "Consumption sensor",
+          "energy_dashboard_entity": "Energy Dashboard entity",
+          "auto_charging": "Auto charging",
+          "flat_price_compare": "Flat price for savings comparison (CZK/kWh)"
+        }
+      }
+    }
+  }
+}

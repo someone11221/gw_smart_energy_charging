@@ -1,0 +1,74 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Cenový provider",
+        "data": {
+          "price_provider": "Poskytovatel cen elektřiny",
+          "price_sensor": "Senzor aktuální ceny (entity_id)"
+        }
+      },
+      "distribution": {
+        "title": "Distribuce a HDO",
+        "description": "Nastavte distributora, tarif a HDO senzor. HDO senzor určuje reálný stav NT/VT tarifu.",
+        "data": {
+          "distributor": "Distributor",
+          "tariff": "Distribuční tarif",
+          "circuit_breaker": "Jistič",
+          "hdo_sensor": "HDO senzor (on=NT nízký tarif)"
+        }
+      },
+      "battery": {
+        "title": "Baterie a predikce spotřeby",
+        "description": "Adaptivní režim se učí z historie. Entita z Energy Dashboardu je nejpřesnější zdroj dat.",
+        "data": {
+          "battery_type": "Typ střídače/baterie",
+          "soc_sensor": "SOC senzor (entity_id)",
+          "battery_power_sensor": "Senzor výkonu baterie (W)",
+          "battery_capacity": "Kapacita baterie (kWh)",
+          "charging_script_on": "Script zapnutí nabíjení",
+          "charging_script_off": "Script vypnutí nabíjení",
+          "consumption_sensor": "Senzor spotřeby domácnosti (volitelné)",
+          "energy_dashboard_entity": "Entita z HA Energy Dashboard (volitelné, auto-detekce)",
+          "prediction_mode": "Režim predikce spotřeby"
+        }
+      },
+      "strategy": {
+        "title": "Strategie nabíjení",
+        "data": {
+          "min_soc_before_peak": "Minimální SOC před cenovým peakem (%)",
+          "target_soc_full": "Cílový SOC nabíjení (%)",
+          "min_soc_safety": "Bezpečnostní minimum SOC (%)",
+          "charging_power": "Nabíjecí výkon (kW)",
+          "auto_charging": "Zapnout automatické nabíjení"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Nastavení Smart Charging",
+        "data": {
+          "distributor": "Distributor",
+          "tariff": "Distribuční tarif",
+          "circuit_breaker": "Jistič",
+          "hdo_sensor": "HDO senzor (on=NT)",
+          "prediction_mode": "Režim predikce (fixní/adaptivní)",
+          "min_soc_before_peak": "Min SOC před peakem (%)",
+          "target_soc_full": "Cílový SOC (%)",
+          "charging_power": "Nabíjecí výkon (kW)",
+          "soc_sensor": "SOC senzor",
+          "battery_power_sensor": "Senzor výkonu baterie",
+          "price_sensor": "Cenový senzor",
+          "charging_script_on": "Script zapnutí",
+          "charging_script_off": "Script vypnutí",
+          "consumption_sensor": "Senzor spotřeby",
+          "energy_dashboard_entity": "Energy Dashboard entita",
+          "auto_charging": "Automatické nabíjení",
+          "flat_price_compare": "Paušální cena pro porovnání úspory (CZK/kWh)"
+        }
+      }
+    }
+  }
+}

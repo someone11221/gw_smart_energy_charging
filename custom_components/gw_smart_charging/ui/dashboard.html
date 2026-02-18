@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Battery Charging</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root{--bg:#0f0e17;--sf:#1a1a2e;--card:#1e2a3a;--acc:#6c63ff;--g:#51cf66;--b:#74c0fc;
+  --r:#ff6b6b;--o:#ffa94d;--tx:#e8eaf0;--m:#8892a4;--bd:rgba(255,255,255,.07);
+  --sh:0 4px 24px rgba(0,0,0,.4);--rad:14px;--rs:9px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--tx);padding:14px;min-height:100vh;line-height:1.5}
+.w{max-width:1600px;margin:0 auto}
+.hdr{background:var(--sf);border-radius:var(--rad);padding:18px 24px;margin-bottom:14px;box-shadow:var(--sh);
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;border:1px solid var(--bd);position:relative;overflow:hidden}
+.hdr::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(108,99,255,.15),transparent 60%);pointer-events:none}
+.hdr h1{font-size:1.45em;font-weight:700;background:linear-gradient(135deg,#a78bfa,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hdr .sub{color:var(--m);font-size:.78em;margin-top:2px}.hdr-r{text-align:right;font-size:.72em;color:var(--m)}.hdr-r b{color:var(--tx);display:block}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+@media(max-width:900px){.g2{grid-template-columns:1fr}}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin-bottom:14px}
+.cd{background:var(--card);border-radius:var(--rad);padding:13px;border:1px solid var(--bd);box-shadow:var(--sh);cursor:help;transition:border-color .2s}
+.cd:hover{border-color:rgba(108,99,255,.35)}
+.cl{font-size:.62em;color:var(--m);text-transform:uppercase;letter-spacing:.7px;margin-bottom:3px;font-weight:600}
+.cv{font-size:1.6em;font-weight:700;line-height:1.1}.cu{font-size:.36em;color:var(--m);margin-left:2px;font-weight:400}
+.cs{font-size:.72em;color:var(--m);margin-top:2px}
+.cg{color:var(--g)}.cb{color:var(--b)}.cp{color:#a78bfa}.co{color:var(--o)}.cr{color:var(--r)}.ct{color:#00d4aa}
+.bb{height:18px;background:rgba(255,255,255,.06);border-radius:6px;overflow:hidden;margin-top:5px;position:relative}
+.bf{height:100%;border-radius:6px;transition:width .6s}.bh{background:linear-gradient(90deg,#51cf66,#69db7c)}
+.bm{background:linear-gradient(90deg,#ffa94d,#ffd43b)}.bl{background:linear-gradient(90deg,#ff6b6b,#f03e3e)}
+.bt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.68em;color:rgba(0,0,0,.8)}
+.pn{background:var(--card);border-radius:var(--rad);padding:16px 18px;margin-bottom:14px;border:1px solid var(--bd);box-shadow:var(--sh)}
+.pn h2{font-size:.88em;font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:7px}
+canvas{max-height:230px}
+.ctrl{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-bottom:8px}
+.btn{padding:7px 15px;border:none;border-radius:var(--rs);font-size:.78em;font-weight:600;cursor:pointer;transition:all .2s}
+.bon{background:linear-gradient(135deg,#0f9d58,#34a853);color:#fff}.bof{background:linear-gradient(135deg,#c62828,#e53935);color:#fff}
+.bbl{background:linear-gradient(135deg,#1565c0,#1e88e5);color:#fff}.btn:hover{filter:brightness(1.15)}.btn:disabled{opacity:.4;cursor:default}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:.74em;font-weight:600}
+.bg{background:rgba(81,207,102,.15);color:#69db7c;border:1px solid rgba(81,207,102,.3)}
+.bb2{background:rgba(116,192,252,.12);color:#74c0fc;border:1px solid rgba(116,192,252,.25)}
+.bgr{background:rgba(255,255,255,.06);color:var(--m);border:1px solid var(--bd)}
+.nt-badge{background:rgba(0,212,170,.15);color:#00d4aa;border:1px solid rgba(0,212,170,.3)}
+.vt-badge{background:rgba(255,107,107,.12);color:#ff8787;border:1px solid rgba(255,107,107,.25)}
+.err{background:rgba(255,107,107,.1);border:1px solid rgba(255,107,107,.3);border-radius:var(--rs);padding:9px 12px;margin-bottom:12px;color:#ff8787;font-size:.82em;display:none}
+/* Tooltip */
+.tip{position:relative}.tip .tt{visibility:hidden;background:#2a2a4a;color:var(--tx);padding:8px 12px;border-radius:8px;font-size:.72em;line-height:1.4;
+  position:absolute;z-index:99;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);width:max-content;max-width:260px;box-shadow:0 4px 16px rgba(0,0,0,.5);
+  border:1px solid var(--bd);pointer-events:none;opacity:0;transition:opacity .2s}
+.tip:hover .tt{visibility:visible;opacity:1}
+.tip .tt::after{content:'';position:absolute;top:100%;left:50%;margin-left:-5px;border:5px solid transparent;border-top-color:#2a2a4a}
+/* Timeline */
+.tl{overflow-x:auto}.tli{min-width:920px}
+.tr{display:flex;border-bottom:1px solid var(--bd);min-height:38px}.tr:last-child{border-bottom:none}
+.trl{width:110px;flex-shrink:0;font-size:.66em;font-weight:600;color:var(--m);padding:4px 7px;display:flex;align-items:center;border-right:1px solid var(--bd);background:rgba(255,255,255,.02)}
+.ths{flex:1;display:flex}.th{flex:1;min-width:20px;position:relative;border-right:1px solid rgba(255,255,255,.04)}
+.thl{font-size:.5em;color:rgba(255,255,255,.25);text-align:center;position:absolute;top:2px;left:50%;transform:translateX(-50%)}
+.tb{position:absolute;left:1px;right:1px;top:12px;bottom:2px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:.48em;font-weight:700;color:rgba(255,255,255,.9)}
+.tc{background:linear-gradient(135deg,#0f9d58,#34a853)}.tp{background:linear-gradient(135deg,#c62828,#e53935)}
+.tbl{width:100%;border-collapse:collapse;font-size:.78em}
+.tbl th{text-align:left;padding:6px 9px;background:rgba(255,255,255,.04);color:var(--m);font-weight:600;border-bottom:1px solid var(--bd);font-size:.78em;text-transform:uppercase;letter-spacing:.4px}
+.tbl td{padding:7px 9px;border-bottom:1px solid rgba(255,255,255,.04)}.tbl tr:hover td{background:rgba(255,255,255,.02)}
+.pb{padding:2px 6px;border-radius:8px;font-size:.7em;font-weight:700}
+.p1{background:rgba(255,107,107,.15);color:#ff8787}.p2{background:rgba(255,169,77,.15);color:#ffa94d}
+.p3{background:rgba(81,207,102,.15);color:#69db7c}.p4{background:rgba(116,192,252,.12);color:#74c0fc}
+.em{color:var(--m);font-style:italic;padding:5px 0;font-size:.84em}
+.ft{text-align:center;color:var(--m);margin-top:14px;font-size:.68em;opacity:.5}
+/* Settings & tabs */
+.stog{cursor:pointer;font-size:.76em;color:var(--acc);font-weight:600;margin-left:auto;padding:3px 9px;border-radius:20px;background:rgba(108,99,255,.12);border:1px solid rgba(108,99,255,.25)}
+.sbd{margin-top:10px;display:none}.sbd.open{display:block}
+.sg{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:7px}
+.fd label{display:block;font-size:.7em;color:var(--m);margin-bottom:2px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+.fd input{width:100%;padding:6px 9px;background:rgba(255,255,255,.06);border:1.5px solid var(--bd);border-radius:var(--rs);font-size:.84em;color:var(--tx)}
+.fd input:focus{outline:none;border-color:var(--acc)}.dv{height:1px;background:var(--bd);margin:10px 0}
+/* Stats */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.stat-item{text-align:center;padding:10px;background:rgba(255,255,255,.03);border-radius:var(--rs);cursor:help}
+.stat-val{font-size:1.4em;font-weight:700}.stat-lbl{font-size:.66em;color:var(--m);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+/* Period tabs */
+.ptabs{display:flex;gap:4px;margin-bottom:12px}.ptab{padding:5px 14px;border:1px solid var(--bd);border-radius:20px;font-size:.74em;
+  font-weight:600;cursor:pointer;color:var(--m);background:transparent;transition:all .2s}
+.ptab.active{background:var(--acc);color:#fff;border-color:var(--acc)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}.pulse{animation:pulse 2s infinite}
+</style>
+</head>
+<body>
+<div class="w">
+
+<div class="hdr">
+  <div><h1>⚡ Smart Battery Charging</h1><div class="sub" id="hdr-sub">—</div></div>
+  <div class="hdr-r">Aktualizace<b id="upd">—</b></div>
+</div>
+<div id="err" class="err"></div>
+
+<div class="pn"><h2>📊 Ceny elektřiny – spot + distribuce (48h)</h2><canvas id="ch-p"></canvas></div>
+
+<div class="cards">
+  <div class="cd tip"><div class="cl">SOC</div><div class="cv cg" id="v-soc">—<span class="cu">%</span></div>
+    <div class="bb"><div class="bf bh" id="bf" style="width:0%"></div><div class="bt" id="bft">—</div></div><div class="cs" id="v-bs">—</div>
+    <span class="tt">Stav nabití baterie (State of Charge). Ukazuje kolik % kapacity je aktuálně k dispozici.</span></div>
+  <div class="cd tip"><div class="cl">Výkon</div><div class="cv cb" id="v-pw">—<span class="cu">W</span></div><div class="cs" id="v-ps">—</div>
+    <span class="tt">Aktuální výkon baterie. Záporné = nabíjení ze sítě, kladné = vybíjení do domu. Pod 100W = standby.</span></div>
+  <div class="cd tip"><div class="cl">Cena</div><div class="cv cp" id="v-tp">—<span class="cu">CZK</span></div><div class="cs" id="v-sp">—</div>
+    <span class="tt">Celková cena elektřiny za kWh: spotová cena OTE + distribuční poplatek + regulované složky. To je to co reálně platíte.</span></div>
+  <div class="cd tip"><div class="cl">HDO</div><div class="cv ct" id="v-hdo">—</div><div class="cs" id="v-hdos">—</div>
+    <span class="tt">HDO signál od distributora. NT = nízký tarif (levnější distribuce), VT = vysoký tarif. Čteno ze senzoru v HA.</span></div>
+  <div class="cd tip"><div class="cl">Plán</div><div class="cv co" id="v-sl">0<span class="cu">sl</span></div><div class="cs" id="v-pl">—</div>
+    <span class="tt">Počet naplánovaných nabíjecích slotů. Každý slot = 15min–hodina kdy je výhodné nabíjet. Obsahuje celkové náklady a kWh.</span></div>
+  <div class="cd tip"><div class="cl">Další nab.</div><div class="cv cg" id="v-nx">—<span class="cu">h</span></div><div class="cs" id="v-nxs">—</div>
+    <span class="tt">Čas do dalšího plánovaného nabíjení. Integrace automaticky spustí nabíjení v nejlevnější hodinu.</span></div>
+  <div class="cd tip"><div class="cl">Spotř. 24h</div><div class="cv ct" id="v-cn">—<span class="cu">kWh</span></div><div class="cs" id="v-cns">—</div>
+    <span class="tt">Předpovězená spotřeba domácnosti na příštích 24 hodin. Adaptivní režim se učí z historie, fixní používá ruční nastavení.</span></div>
+  <div class="cd tip"><div class="cl">Dnes</div><div class="cv cr" id="v-ct">0<span class="cu">CZK</span></div><div class="cs" id="v-cts">—</div>
+    <span class="tt">Celkové náklady na energii za dnešní den. Zahrnuje spotřebu ze sítě × celková cena (spot + distribuce).</span></div>
+</div>
+
+<div class="g2">
+  <div class="pn"><h2>🔋 SOC predikce a spotřeba (48h)</h2><canvas id="ch-s"></canvas></div>
+  <div class="pn">
+    <h2>💰 Historie nákladů <span class="stog" id="hist-period">30 dní</span></h2>
+    <div class="ptabs" id="htabs">
+      <div class="ptab" data-d="7">7d</div><div class="ptab active" data-d="30">30d</div>
+      <div class="ptab" data-d="90">90d</div><div class="ptab" data-d="365">rok</div>
+    </div>
+    <canvas id="ch-c"></canvas>
+    <div id="hist-sum" style="margin-top:10px;font-size:.76em;color:var(--m)"></div>
+  </div>
+</div>
+
+<!-- Statistics -->
+<div class="pn">
+  <h2>📈 Statistiky nákladů</h2>
+  <div class="ptabs" id="stabs">
+    <div class="ptab active" data-p="today">Dnes</div><div class="ptab" data-p="week">Týden</div>
+    <div class="ptab" data-p="month">Měsíc</div><div class="ptab" data-p="year">Rok</div>
+  </div>
+  <div class="stat-grid" id="stats"></div>
+  <div id="savings" style="margin-top:12px;padding:10px;background:rgba(81,207,102,.06);border-radius:8px;border:1px solid rgba(81,207,102,.15);display:none">
+    <div style="font-size:.78em;color:#69db7c;font-weight:600" id="sav-txt"></div>
+  </div>
+</div>
+
+<!-- Controls -->
+<div class="pn">
+  <h2>🎛️ Ovládání <span class="stog" onclick="document.getElementById('sbd').classList.toggle('open')">⚙️ Nastavení</span></h2>
+  <div class="ctrl">
+    <button class="btn bon" onclick="doAuto(true)">✓ Auto ON</button>
+    <button class="btn bof" onclick="doAuto(false)">✗ Auto OFF</button>
+    <button class="btn bbl" id="br" onclick="doRefresh()">🔄 Přepočítat</button>
+    <span id="ast"></span>
+  </div>
+  <div class="sbd" id="sbd">
+    <div class="dv"></div>
+    <p style="font-size:.72em;color:var(--m);margin-bottom:8px">Ruční nastavení spotřeby domácnosti (pro fixní profil). Adaptivní režim se učí automaticky z HA historie.</p>
+    <div class="sg">
+      <div class="fd"><label>Den (kW)</label><input type="number" id="sd" value="0.8" min="0.1" max="15" step="0.1" title="Průměrná spotřeba 10:00–17:00"></div>
+      <div class="fd"><label>Ráno 6–9 (kW)</label><input type="number" id="sm" value="1.5" min="0.1" max="15" step="0.1" title="Ranní špička: boiler, snídaně, topení"></div>
+      <div class="fd"><label>Večer 17–22 (kW)</label><input type="number" id="se" value="1.8" min="0.1" max="15" step="0.1" title="Večerní špička: vaření, TV, osvětlení"></div>
+      <div class="fd"><label>Noc 22–6 (kW)</label><input type="number" id="sn" value="0.4" min="0.1" max="15" step="0.1" title="Noční standby: lednice, standby, wifi"></div>
+      <div class="fd"><label>Kapacita bat. (kWh)</label><input type="number" id="sc" value="17" min="1" max="200" step="0.5" title="Celková kapacita baterie"></div>
+      <div class="fd"><label>Nabíjení (kW)</label><input type="number" id="sp" value="5" min="0.5" max="25" step="0.5" title="Maximální nabíjecí výkon ze sítě"></div>
+    </div>
+    <div style="margin-top:8px"><button class="btn bbl" onclick="saveS()">💾 Uložit</button> <span id="sv" style="font-size:.8em;color:var(--g);display:none">✓ Uloženo</span></div>
+    <div class="dv"></div>
+    <div style="font-size:.74em;color:var(--m)" id="tinfo">—</div>
+  </div>
+</div>
+
+<!-- Timeline -->
+<div class="pn"><h2>📅 Plán 48h</h2><div class="tl"><div class="tli" id="tl"></div></div></div>
+<div class="pn"><h2>📋 Nabíjecí sloty</h2><div id="stbl"><div class="em">Načítání…</div></div></div>
+<div class="pn"><h2>⚠️ Cenové peaky</h2><div id="ptbl"><div class="em">Načítání…</div></div></div>
+
+<!-- Debug panel -->
+<div class="pn">
+  <h2>🐛 Debug log
+    <span class="stog" id="dbg-toggle" onclick="$('dbg-body').classList.toggle('open');if($('dbg-body').classList.contains('open'))loadDbg()">Zobrazit</span>
+  </h2>
+  <div id="dbg-sum" style="font-size:.74em;color:var(--m);margin-bottom:6px"></div>
+  <div class="sbd" id="dbg-body">
+    <div class="ctrl" style="margin-bottom:8px">
+      <select id="dbg-level" class="btn bgr" style="padding:5px 10px;appearance:auto;background:rgba(255,255,255,.06);color:var(--tx);border:1px solid var(--bd);border-radius:6px;font-size:.76em">
+        <option value="">Vše</option><option value="error">Errory</option><option value="warn">Warningy</option>
+        <option value="action">Akce</option><option value="info">Info</option><option value="debug">Debug</option>
+      </select>
+      <select id="dbg-cat" class="btn bgr" style="padding:5px 10px;appearance:auto;background:rgba(255,255,255,.06);color:var(--tx);border:1px solid var(--bd);border-radius:6px;font-size:.76em">
+        <option value="">Vše</option><option value="prices">Ceny</option><option value="battery">Baterie</option>
+        <option value="hdo">HDO</option><option value="plan">Plán</option><option value="charging">Nabíjení</option>
+        <option value="config">Config</option><option value="fallback">Fallback</option><option value="stats">Stats</option>
+      </select>
+      <button class="btn bbl" onclick="loadDbg()">🔄 Refresh</button>
+      <a class="btn bon" href="/api/gw_smart_charging/debug/download?format=txt" download style="text-decoration:none">📥 TXT</a>
+      <a class="btn bbl" href="/api/gw_smart_charging/debug/download?format=json" download style="text-decoration:none">📥 JSON</a>
+    </div>
+    <div id="dbg-log" style="max-height:400px;overflow-y:auto;background:rgba(0,0,0,.3);border-radius:8px;padding:8px;font-family:'Cascadia Code',monospace;font-size:.68em;line-height:1.5"></div>
+    <div style="margin-top:6px;font-size:.66em;color:var(--m)" id="dbg-info"></div>
+  </div>
+</div>
+
+<div class="ft" id="ft">Smart Battery Charging Controller</div>
+</div>
+
+<script>
+/*INITIAL_DATA_PLACEHOLDER*/
+let D=null,chP=null,chS=null,chC=null;
+const $=id=>document.getElementById(id);
+function s(id,h){const e=$(id);if(e)e.innerHTML=h;}
+function E(m){const e=$('err');e.style.display=m?'block':'none';e.textContent=m;}
+function n(v,d=2){const x=parseFloat(v);return isNaN(x)?null:+x.toFixed(d);}
+function lk(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),
+  dd=String(d.getDate()).padStart(2,'0'),h=String(d.getHours()).padStart(2,'0'),
+  mi=String(d.getMinutes()).padStart(2,'0');return`${y}-${m}-${dd} ${h}:${mi}`;}
+function lkh(d){return lk(d).substring(0,13);}
+let cfg={day:.8,morning:1.5,evening:1.8,night:.4,capacity:17,chargingPower:5,minSoc:20};
+function loadC(){try{Object.assign(cfg,JSON.parse(localStorage.getItem('gw3')||'{}'));}catch(e){}
+  $('sd').value=cfg.day;$('sm').value=cfg.morning;$('se').value=cfg.evening;
+  $('sn').value=cfg.night;$('sc').value=cfg.capacity;$('sp').value=cfg.chargingPower;}
+function saveS(){cfg.day=+$('sd').value||.8;cfg.morning=+$('sm').value||1.5;cfg.evening=+$('se').value||1.8;
+  cfg.night=+$('sn').value||.4;cfg.capacity=+$('sc').value||17;cfg.chargingPower=+$('sp').value||5;
+  localStorage.setItem('gw3',JSON.stringify(cfg));
+  api('/api/gw_smart_charging/config','POST',{home_consumption_kw:cfg.day,battery_capacity:cfg.capacity,
+    charging_power:cfg.chargingPower,home_consumption_morning:cfg.morning,
+    home_consumption_evening:cfg.evening,home_consumption_night:cfg.night});
+  const el=$('sv');el.style.display='inline';setTimeout(()=>el.style.display='none',2000);if(D)R(D);}
+function hkw(h){if(h>=6&&h<=9)return cfg.morning;if(h>=17&&h<=21)return cfg.evening;if(h>=22||h<=5)return cfg.night;return cfg.day;}
+async function api(u,m='GET',b=null){const o={method:m,headers:{'Content-Type':'application/json'}};
+  if(b)o.body=JSON.stringify(b);const r=await fetch(u,o);if(!r.ok)throw new Error(`HTTP ${r.status}`);return r.json();}
+async function doAuto(on){try{E('');await api(`/api/gw_smart_charging/auto/${on?'on':'off'}`,'POST');setTimeout(poll,800);}catch(e){E(e.message);}}
+async function doRefresh(){const b=$('br');b.disabled=true;b.textContent='⏳…';
+  try{await api('/api/gw_smart_charging/refresh','POST');setTimeout(()=>{b.disabled=false;b.textContent='🔄 Přepočítat';poll();},4000);}
+  catch(e){E(e.message);b.disabled=false;b.textContent='🔄 Přepočítat';}}
+
+let histDays=30,statPeriod='today';
+
+function R(d){D=d;
+  if(d.errors?.length)E('⚠️ '+d.errors.join(' | '));else E('');
+  const ti=d.tariff_info||{},hdo=d.hdo||{},st=d.statistics||{};
+  s('hdr-sub',`${ti.distributor||'?'} · ${ti.tariff||'?'} ${ti.name||''} · ${ti.breaker||'?'}`);
+  s('ft',`Smart Battery Charging v${d.version||'3.2.0'} · ${ti.distributor||''} ${ti.tariff||''}`);
+  if(ti.total_vt)s('tinfo',`<b style="color:var(--tx)">Distribuce:</b> ${ti.distributor} ${ti.tariff} ${ti.name||''} · ${ti.breaker}<br>`
+    +`VT: +${ti.total_vt} CZK/kWh | NT: +${ti.total_nt} CZK/kWh | Stálý plat: ${ti.monthly_fixed} CZK/měs<br>`
+    +`<span style="font-size:.9em;color:#8892a4">HDO senzor: ${hdo.sensor||'—'} · Predikce: ${d.consumption_forecast?.mode||'?'}</span>`);
+  const bat=d.battery||{},soc=n(bat.soc,1);
+  if(soc!=null){s('v-soc',soc.toFixed(1)+'<span class="cu">%</span>');s('bft',soc.toFixed(0)+'%');
+    const f=$('bf');f.style.width=soc+'%';f.className='bf '+(soc<30?'bl':soc<70?'bm':'bh');
+    s('v-bs',(bat.charging?'⚡ Nabíjí':bat.discharging?'⬇️ Vybíjí':'⏸️ Standby')+' · '+Math.abs(n(bat.power,0)||0)+'W');}
+  s('v-pw',(n(Math.abs(bat.power||0),0)||'—')+'<span class="cu">W</span>');
+  s('v-ps',!bat.power?'—':bat.power<-100?'⚡ Nabíjení ze sítě':bat.power>100?'⬇️ Vybíjení do domu':'⏸️ Standby');
+  const ntNow=ti.current_nt;
+  s('v-hdo',ntNow?'NT':'VT');$('v-hdo').className='cv '+(ntNow?'ct':'cr');
+  s('v-hdos',(hdo.available?'Senzor aktivní':'Statický rozvrh'));
+  const fc=d.price_forecast||{},pl=fc.prices||[],nk=lkh(new Date()),cur=pl.find(p=>(p.time||'').substring(0,13)===nk);
+  s('v-tp',(cur?n(cur.total_price,2):'—')+'<span class="cu">CZK/kWh</span>');
+  s('v-sp','Spot: '+(cur?n(cur.price,4):'—')+' CZK');
+  const plan=d.plan||{},slots=plan.slots||[],peaks=plan.peaks||[];
+  s('v-sl',slots.length+'<span class="cu">sl</span>');
+  s('v-pl',plan.total_cost!=null?n(plan.total_cost,1)+' CZK · '+n(plan.total_kwh,1)+' kWh':'Žádný plán');
+  const now=new Date(),fut=slots.filter(x=>new Date(x.start.replace(' ','T'))>now).sort((a,b)=>new Date(a.start)-new Date(b.start));
+  if(fut.length){const hrs=((new Date(fut[0].start.replace(' ','T'))-now)/3.6e6);
+    s('v-nx',(hrs<1?(hrs*60).toFixed(0)+'<span class="cu">min</span>':hrs.toFixed(1)+'<span class="cu">h</span>'));s('v-nxs',fut[0].start);}
+  else{s('v-nx','—');s('v-nxs','Žádné naplánované');}
+  const cf=d.consumption_forecast||{};
+  s('v-cn',(cf.total_24h_kwh!=null?cf.total_24h_kwh:'—')+'<span class="cu">kWh</span>');
+  s('v-cns',cf.mode==='adaptive'?'📈 Adaptivní (učí se)':cf.mode==='fixed'?'📐 Fixní profil':'—');
+  const td=st.today||{};
+  s('v-ct',(n(td.cost_czk,1)||'0')+'<span class="cu">CZK</span>');
+  s('v-cts',(td.kwh_consumed||0)+' kWh spotřebováno');
+  let badge='';
+  if(d.charging_active)badge='<span class="badge bg pulse">⚡ NABÍJÍ</span>';
+  else if(d.auto_enabled)badge='<span class="badge bb2">Auto ON</span>';
+  else badge='<span class="badge bgr">Auto OFF</span>';
+  if(ntNow!=null)badge+=' <span class="badge '+(ntNow?'nt-badge':'vt-badge')+'">'+(ntNow?'NT nízký':'VT vysoký')+'</span>';
+  if(d.fallback_active)badge+=' <span class="badge" style="background:rgba(255,107,107,.15);color:#ff8787;border:1px solid rgba(255,107,107,.3)">⚠️ FALLBACK</span>';
+  s('ast',badge);s('upd',d.last_update||'—');
+  if(pl.length)rPC(pl,slots,peaks);rSC(soc,slots,d);rCC(st);rStats(st);rTL(soc,slots,peaks,pl);rST(slots,soc);rPT(peaks,slots);
+}
+
+/* Price chart */
+function rPC(pl,sl,pk){const c=$('ch-p');const lb=pl.map(p=>(p.time||'').substring(11,16));
+  const sp=pl.map(p=>n(p.price,4)),tt=pl.map(p=>n(p.total_price,4));
+  const cm=pl.map((p,i)=>{const k=(p.time||'').substring(0,13);return sl.some(s=>{const ss=(s.start||'').substring(0,13),se=(s.end||'').substring(0,13);return k>=ss&&k<se;})?tt[i]:null;});
+  const pm=pl.map((p,i)=>pk.some(k=>(k.time||'').substring(0,13)===(p.time||'').substring(0,13))?tt[i]:null);
+  if(chP)chP.destroy();
+  chP=new Chart(c,{type:'line',data:{labels:lb,datasets:[
+    {label:'Celková cena',data:tt,borderColor:'#a78bfa',backgroundColor:'rgba(167,139,250,.06)',fill:true,tension:.4,pointRadius:1,borderWidth:2},
+    {label:'Spotová cena',data:sp,borderColor:'rgba(167,139,250,.35)',fill:false,tension:.4,pointRadius:0,borderDash:[4,3],borderWidth:1.5},
+    {label:'Nabíjecí slot',data:cm,borderColor:'#34a853',backgroundColor:'rgba(52,168,83,.3)',pointRadius:5,showLine:false,pointStyle:'circle'},
+    {label:'Cenový peak',data:pm,borderColor:'#e53935',backgroundColor:'rgba(229,57,53,.3)',pointRadius:7,showLine:false,pointStyle:'triangle'},
+  ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{color:'#8892a4',font:{size:9}}},
+    tooltip:{callbacks:{label:c=>{const v=c.parsed.y;return v!=null?c.dataset.label+': '+v.toFixed(4)+' CZK/kWh':''}},backgroundColor:'#1e2a3a',titleColor:'#e8eaf0',bodyColor:'#8892a4'}},
+    scales:{y:{title:{display:true,text:'CZK/kWh',color:'#8892a4'},beginAtZero:false,grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#8892a4'}},
+      x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#8892a4',maxRotation:0}}}}});}
+
+/* SOC + consumption — FIXED: battery floors at minSoc, doesn't supply 100% */
+function rSC(soc,sl,d){const c=$('ch-s');const H=48,nw=new Date(),st=new Date(nw);st.setMinutes(0,0,0);
+  const ch=d.consumption_hourly||{},cm={};(Array.isArray(ch)?ch:[]).forEach(x=>{cm[(x.time||'').substring(0,13)]=x.kw;});
+  const lb=[],sa=[],ca=[];let ss=soc!=null?soc:50;
+  const minSoc=cfg.minSoc||20;
+  const capKwh=cfg.capacity||17;
+  for(let i=0;i<H;i++){const t=new Date(st);t.setHours(st.getHours()+i);const h=t.getHours(),k=lkh(t);
+    let ck=cm[k];if(ck==null)ck=hkw(h);ca.push(+ck.toFixed(2));
+    const ic=sl.some(x=>{const a=(x.start||'').substring(0,13),b=(x.end||'').substring(0,13);return k>=a&&k<b;});
+    if(ic){
+      /* Charging: gain from charger minus consumption */
+      const netGain=(cfg.chargingPower*.95-ck);
+      ss=ss+(netGain/capKwh*100);
+      ss=Math.min(100,ss);
+    } else {
+      /* Not charging: battery covers part of consumption, but stops at minSoc */
+      if(ss>minSoc){
+        /* Battery supplies consumption, grid picks up if SOC hits floor */
+        const maxDrain=(ss-minSoc)/100*capKwh; /* kWh battery can still give */
+        const drain=Math.min(ck,maxDrain); /* battery gives max what it can */
+        ss=ss-(drain/capKwh*100);
+      }
+      /* If at minSoc: grid covers everything, SOC stays flat */
+      ss=Math.max(minSoc,ss);
+    }
+    sa.push(+ss.toFixed(1));lb.push(h.toString().padStart(2,'0')+':00');}
+  if(chS)chS.destroy();
+  chS=new Chart(c,{type:'line',data:{labels:lb,datasets:[
+    {label:'SOC %',data:sa,borderColor:'#34a853',backgroundColor:'rgba(52,168,83,.08)',fill:true,tension:.4,pointRadius:1,yAxisID:'y'},
+    {label:'Spotřeba kW',data:ca,borderColor:'#1e88e5',backgroundColor:'rgba(30,136,229,.06)',fill:true,tension:.3,pointRadius:0,borderDash:[5,4],yAxisID:'y2'},
+  ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{color:'#8892a4',font:{size:9}}},
+    tooltip:{mode:'index',intersect:false,backgroundColor:'#1e2a3a',titleColor:'#e8eaf0',bodyColor:'#8892a4'}},
+    scales:{y:{min:0,max:105,title:{display:true,text:'SOC %',color:'#8892a4'},position:'left',grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#8892a4'}},
+      x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#8892a4',maxRotation:0}},
+      y2:{min:0,title:{display:true,text:'kW',color:'#8892a4'},position:'right',grid:{drawOnChartArea:false},ticks:{color:'#8892a4'}}}}});}
+
+/* Daily cost chart with period selector */
+function rCC(st){const c=$('ch-c');const dh=(st.daily_history||[]).slice(-histDays);if(!dh.length)return;
+  const lb=dh.map(d=>d.date.substring(5)),costs=dh.map(d=>d.cost_czk),kwhs=dh.map(d=>d.kwh_consumed);
+  const tot=costs.reduce((a,b)=>a+b,0),avg=tot/costs.length;
+  s('hist-sum',`Celkem: <b style="color:var(--tx)">${n(tot,0)} CZK</b> · Průměr/den: <b style="color:var(--tx)">${n(avg,1)} CZK</b> · `
+    +`Spotřeba: <b style="color:var(--tx)">${n(kwhs.reduce((a,b)=>a+b,0),0)} kWh</b>`);
+  $('hist-period').textContent=histDays>=365?'rok':histDays+'d';
+  if(chC)chC.destroy();
+  chC=new Chart(c,{type:'bar',data:{labels:lb,datasets:[
+    {label:'Náklady CZK',data:costs,backgroundColor:'rgba(167,139,250,.5)',borderRadius:4,yAxisID:'y'},
+    {label:'Spotřeba kWh',data:kwhs,type:'line',borderColor:'#00d4aa',backgroundColor:'transparent',tension:.4,pointRadius:1,borderWidth:2,yAxisID:'y2'},
+  ]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'top',labels:{color:'#8892a4',font:{size:9}}}},
+    scales:{y:{title:{display:true,text:'CZK',color:'#8892a4'},position:'left',grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#8892a4'}},
+      x:{grid:{display:false},ticks:{color:'#8892a4',maxRotation:45,font:{size:8}}},
+      y2:{title:{display:true,text:'kWh',color:'#8892a4'},position:'right',grid:{drawOnChartArea:false},ticks:{color:'#8892a4'}}}}});}
+
+/* Statistics with period tabs and savings estimate */
+function rStats(st){
+  const pMap={today:st.today||{},week:st.week||{},month:st.month||{},year:st.year||{}};
+  const p=pMap[statPeriod]||{};
+  const isDay=statPeriod==='today';
+  const el=$('stats');
+  el.innerHTML=[
+    si(isDay?n(p.cost_czk,1):n(p.total_cost_czk,1),'CZK','Náklady','cr','Celkové náklady na energii za zvolené období'),
+    si(isDay?n(p.kwh_consumed,1):n(p.total_kwh_consumed||p.total_kwh,1),'kWh','Spotřeba','cb','Celková spotřeba elektřiny ze sítě'),
+    si(isDay?n(p.kwh_charged,1):n(p.total_kwh_charged,1),'kWh','Nabito','cg','Kolik kWh bylo nabito do baterie ze sítě'),
+    si(n(p.avg_price||p.avg_price_czk_kwh,2),'CZK/kWh','Ø Cena','cp','Průměrná cena za kWh včetně distribuce'),
+    si(isDay?'—':n(p.avg_daily_cost_czk||p.avg_daily_cost,1),'CZK/den','Ø Den','co','Průměrné denní náklady'),
+    si(isDay?'—':((p.nt_share_pct||0)+'%'),'','NT podíl','ct','Kolik % spotřeby bylo v nízkém tarifu (levnějším)'),
+    si(isDay?'—':n(p.days,0)||'—','dní','Období','cb','Počet dní s daty v tomto období'),
+    si(p.charging_sessions||0,'×','Nabíjení','cg','Počet automatických nabíjecích relací'),
+  ].join('');
+  /* Savings estimate */
+  const savEl=$('savings');
+  const mc=pMap.month||{};
+  const flatP=D.flat_price_compare||4.5;
+  if(mc.avg_price_czk_kwh&&mc.total_kwh_consumed&&mc.avg_price_czk_kwh<flatP){
+    const saved=((flatP-mc.avg_price_czk_kwh)*mc.total_kwh_consumed).toFixed(0);
+    if(saved>0){savEl.style.display='block';
+      s('sav-txt',`💡 Odhadovaná úspora za měsíc: ~${saved} CZK oproti paušálnímu tarifu (${flatP} CZK/kWh)`);
+    }else{savEl.style.display='none';}
+  }else{savEl.style.display='none';}
+}
+function si(v,u,l,c,tip){return`<div class="stat-item tip"><div class="stat-val ${c}">${v||'—'}<span style="font-size:.35em;color:var(--m)"> ${u}</span></div><div class="stat-lbl">${l}</div><span class="tt">${tip}</span></div>`;}
+
+/* Timeline */
+function rTL(soc,sl,pk,pl){const tl=$('tl');const nw=new Date(),st=new Date(nw);st.setMinutes(0,0,0);const H=48,hrs=[];
+  for(let i=0;i<H;i++){const t=new Date(st);t.setHours(st.getHours()+i);const k=lkh(t);
+    const po=pl.find(p=>(p.time||'').substring(0,13)===k);hrs.push({t,k,i,pt:po?+po.total_price:null});}
+  const vp=hrs.map(h=>h.pt).filter(Boolean);const mn=vp.length?Math.min(...vp):0,mx=vp.length?Math.max(...vp):1;
+  const mk=(l,c)=>`<div class="tr"><div class="trl">${l}</div><div class="ths">${c}</div></div>`;
+  const lbC=hrs.map(h=>`<div class="th"><div class="thl">${h.t.getHours().toString().padStart(2,'0')}</div></div>`).join('');
+  const pC=hrs.map(h=>{const p=h.pt;let bg='rgba(255,255,255,.03)',tx='';
+    if(p!=null){const r=mx===mn?.5:(p-mn)/(mx-mn);const R=Math.round(30+r*200),G=Math.round(180-r*150),B=Math.round(50+r*30);bg=`rgba(${R},${G},${B},.8)`;tx=p.toFixed(1);}
+    return`<div class="th" style="background:${bg}"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.46em;color:rgba(255,255,255,.85);font-weight:600">${tx}</div></div>`;}).join('');
+  const cC=hrs.map(h=>{const x=sl.find(s=>{const a=(s.start||'').substring(0,13),b=(s.end||'').substring(0,13);return h.k>=a&&h.k<b;});
+    return`<div class="th">${x?`<div class="tb tc">P${x.priority}</div>`:''}</div>`;}).join('');
+  const kC=hrs.map(h=>{const ip=pk.some(p=>(p.time||'').substring(0,13)===h.k);
+    return`<div class="th">${ip?'<div class="tb tp">⚡</div>':''}</div>`;}).join('');
+  tl.innerHTML=mk('Čas',lbC)+mk('💰 Cena',pC)+mk('⚡ Nabíjení',cC)+mk('🔴 Peak',kC);}
+
+/* Slots table */
+function rST(sl,soc){const el=$('stbl');if(!sl.length){el.innerHTML='<div class="em">Žádné naplánované sloty</div>';return;}
+  let ss=soc||50;const P={1:'🔴',2:'🟠',3:'🟢',4:'⚪'};
+  const rows=sl.map(x=>{const a=new Date(x.start.replace(' ','T')),b=new Date(x.end.replace(' ','T'));
+    const d=(b-a)/60000,kw=+(d/60*cfg.chargingPower*.95).toFixed(1);
+    const sb=+ss.toFixed(0),sa=+Math.min(100,ss+kw/cfg.capacity*100).toFixed(0);ss=sa;
+    return`<tr><td><b>${x.start}</b></td><td>${(x.end||'').substring(11,16)}</td><td>${d>=60?Math.round(d/60)+'h':d+'m'}</td>
+      <td><span class="pb p${x.priority}">${P[x.priority]||'?'}P${x.priority}</span></td>
+      <td style="color:#69db7c;font-weight:600">${sb}→${sa}%</td><td><b>${n(x.total_price,4)}</b></td><td>${kw}</td>
+      <td style="font-size:.7em;color:#8892a4;max-width:150px">${(x.reason||'').substring(0,50)}</td></tr>`;});
+  el.innerHTML=`<table class="tbl"><thead><tr><th>Od</th><th>Do</th><th>Délka</th><th>Priorita</th><th>SOC</th><th>CZK/kWh</th><th>kWh</th><th>Důvod</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;}
+
+function rPT(pk,sl){const el=$('ptbl');if(!pk.length){el.innerHTML='<div class="em">Žádné detekované peaky</div>';return;}
+  const rows=pk.map(p=>{const pr=sl.find(s=>{const e=new Date(s.end.replace(' ','T')),t=new Date(p.time.replace(' ','T'));return e<=t&&(t-e)/3.6e6<=8;});
+    return`<tr><td><b>${p.time}</b></td><td style="color:#ff8787;font-weight:600">${n(p.price,4)} CZK</td>
+      <td>${pr?`<span style="color:#69db7c">✅ Nabito ${(pr.start||'').substring(11,16)}–${(pr.end||'').substring(11,16)}</span>`:'<span style="color:#ffa94d">⚠️ Bez přípravy</span>'}</td></tr>`;});
+  el.innerHTML=`<table class="tbl"><thead><tr><th>Čas peaku</th><th>Cena</th><th>Příprava</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;}
+
+/* Tab handlers */
+document.querySelectorAll('#htabs .ptab').forEach(t=>t.addEventListener('click',function(){
+  document.querySelectorAll('#htabs .ptab').forEach(x=>x.classList.remove('active'));this.classList.add('active');
+  histDays=+this.dataset.d;if(D)rCC(D.statistics||{});}));
+document.querySelectorAll('#stabs .ptab').forEach(t=>t.addEventListener('click',function(){
+  document.querySelectorAll('#stabs .ptab').forEach(x=>x.classList.remove('active'));this.classList.add('active');
+  statPeriod=this.dataset.p;if(D)rStats(D.statistics||{});}));
+
+/* Debug summary in main data */
+function rDbgSum(d){
+  const ds=d.debug_summary||{};
+  const fb=d.fallback_active;
+  let t=`Events: ${ds.total_events||0} · Errors: <span style="color:var(--r)">${ds.error_count||0}</span> · Warnings: ${ds.warn_count||0} · Actions: <span style="color:var(--g)">${ds.action_count||0}</span>`;
+  if(fb)t+=' · <span style="color:var(--r);font-weight:700">⚠️ FALLBACK MÓD AKTIVNÍ</span>';
+  s('dbg-sum',t);
+}
+
+const LCLR={error:'#ff6b6b',warn:'#ffa94d',action:'#69db7c',info:'#74c0fc',debug:'#8892a4'};
+async function loadDbg(){
+  try{
+    const lv=$('dbg-level').value,ct=$('dbg-cat').value;
+    let u='/api/gw_smart_charging/debug?limit=200';
+    if(lv)u+=`&level=${lv}`;if(ct)u+=`&category=${ct}`;
+    const r=await api(u);
+    const el=$('dbg-log');
+    if(!r.events||!r.events.length){el.innerHTML='<div class="em">Žádné eventy</div>';return;}
+    el.innerHTML=r.events.map(e=>{
+      const c=LCLR[e.level]||'#888';
+      const det=e.details&&Object.keys(e.details).length?' <span style="color:#666">'+Object.entries(e.details).map(([k,v])=>`${k}=${v}`).join(' ')+'</span>':'';
+      return`<div style="border-bottom:1px solid rgba(255,255,255,.04);padding:2px 0"><span style="color:#666">${e.timestamp.substring(11)}</span> <span style="color:${c};font-weight:600">${e.level.toUpperCase().padEnd(6)}</span> <span style="color:#a78bfa">[${e.category}]</span> ${e.message}${det}</div>`;
+    }).join('');
+    el.scrollTop=el.scrollHeight;
+    const sm=r.summary||{};
+    s('dbg-info',`Celkem: ${sm.total_events||0} eventů · Start: ${sm.started||'?'} · Ring buffer: max 500`);
+  }catch(e){s('dbg-log',`<div class="em">Chyba: ${e.message}</div>`);}
+}
+
+/* Hook debug summary into main render */
+const _origR=R;
+R=function(d){_origR(d);rDbgSum(d);};
+
+async function poll(){try{R(await api('/api/gw_smart_charging/data'));}catch(e){E(e.message);}}
+loadC();
+if(typeof INITIAL_DATA!=='undefined'&&INITIAL_DATA&&Object.keys(INITIAL_DATA).length)R(INITIAL_DATA);else poll();
+setInterval(poll,30000);
+</script>
+</body>
+</html>

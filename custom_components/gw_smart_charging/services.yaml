@@ -1,0 +1,7 @@
+force_plan_update:
+  name: Force Plan Update
+  description: Forces immediate recalculation of the charging plan
+
+get_charging_schedule:
+  name: Get Charging Schedule
+  description: Returns complete charging plan with slots and predicted peaks

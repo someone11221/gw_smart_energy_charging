@@ -1,0 +1,72 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Cenový provider",
+        "data": {
+          "price_provider": "Poskytovatel cen",
+          "price_sensor": "Senzor aktuální ceny"
+        }
+      },
+      "distribution": {
+        "title": "Distribuce a HDO",
+        "data": {
+          "distributor": "Distributor",
+          "tariff": "Tarif",
+          "circuit_breaker": "Jistič",
+          "hdo_sensor": "HDO senzor (on=NT nízký tarif)"
+        }
+      },
+      "battery": {
+        "title": "Baterie a spotřeba",
+        "data": {
+          "battery_type": "Typ baterie",
+          "soc_sensor": "SOC senzor",
+          "battery_power_sensor": "Senzor výkonu baterie",
+          "battery_capacity": "Kapacita baterie (kWh)",
+          "charging_script_on": "Script zapnutí nabíjení",
+          "charging_script_off": "Script vypnutí nabíjení",
+          "consumption_sensor": "Senzor spotřeby (volitelné)",
+          "energy_dashboard_entity": "Entita z HA Energy Dashboard (volitelné)",
+          "prediction_mode": "Režim predikce spotřeby"
+        }
+      },
+      "strategy": {
+        "title": "Strategie nabíjení",
+        "data": {
+          "min_soc_before_peak": "Min SOC před peakem (%)",
+          "target_soc_full": "Cílový SOC (%)",
+          "min_soc_safety": "Bezpečnostní minimum SOC (%)",
+          "charging_power": "Nabíjecí výkon (kW)",
+          "auto_charging": "Automatické nabíjení"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Nastavení Smart Charging",
+        "data": {
+          "distributor": "Distributor",
+          "tariff": "Tarif",
+          "circuit_breaker": "Jistič",
+          "hdo_sensor": "HDO senzor",
+          "prediction_mode": "Režim predikce",
+          "min_soc_before_peak": "Min SOC před peakem",
+          "target_soc_full": "Cílový SOC",
+          "charging_power": "Nabíjecí výkon (kW)",
+          "soc_sensor": "SOC senzor",
+          "battery_power_sensor": "Senzor výkonu",
+          "price_sensor": "Cenový senzor",
+          "charging_script_on": "Script ON",
+          "charging_script_off": "Script OFF",
+          "consumption_sensor": "Senzor spotřeby",
+          "energy_dashboard_entity": "Energy Dashboard entita",
+          "auto_charging": "Auto nabíjení",
+          "flat_price_compare": "Paušální cena pro porovnání úspory (CZK/kWh)"
+        }
+      }
+    }
+  }
+}
